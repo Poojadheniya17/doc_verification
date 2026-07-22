@@ -141,7 +141,7 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 | 1 | Scaffold (folders, configs, requirements, README) | Done |
 | 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Done |
 | 3 | Baselines (zero-shot VLM, OCR) | OCR done; VLM eval built + tested, real numbers deferred to Kaggle |
-| 4 | Core SFT + QLoRA fine-tuning | Not started |
+| 4 | Core SFT + QLoRA fine-tuning | Script + data pipeline built and tested; training run itself deferred to Kaggle |
 | 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Not started |
 | 6 | Core experiments (leave-one-out, adversarial rounds) | Not started |
 | 7 | Decision layer (risk tiering, cost simulation) | Not started |

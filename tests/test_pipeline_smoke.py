@@ -22,6 +22,8 @@ from src.data_generation.degrade import DEGRADATION_KINDS, degrade_image
 from src.data_generation.field_tamper import _mutate_digits
 from src.eval.clean_eval import _extract_json, build_eval_sample
 from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
+from src.training.checkpoint_utils import latest_checkpoint
+from src.training.sft_train import _apply_tier1_field_overrides, build_conversation, build_sft_examples
 from src.utils.image_utils import unique_stem
 from src.utils.ocr_baseline import _DATE_RE
 
@@ -221,6 +223,84 @@ def test_build_eval_sample_balances_categories(tmp_path):
     labels = [e["true_label"] for e in examples]
     assert labels.count("genuine") == 2
     assert labels.count("tampered") == 2
+
+
+def test_apply_tier1_field_overrides_matches_tampered_field():
+    ground_truth = {"name": "AINARS ALKSNIS", "dob": "28.09.1974.", "id_number": "LV6309038",
+                     "address": None, "expiry": "04.11.2026."}
+    tampers = [{"bbox_xyxy": [0, 0, 1, 1], "original_text": "04.11.2026 .", "tampered_text": "14.16.0026 ."}]
+    updated = _apply_tier1_field_overrides(ground_truth, tampers)
+    assert updated["expiry"] == "14.16.0026 ."
+    assert updated["dob"] == "28.09.1974."  # untouched field stays at genuine value
+
+
+def test_apply_tier1_field_overrides_ignores_tamper_outside_schema():
+    ground_truth = {"name": "AINARS ALKSNIS", "dob": "28.09.1974.", "id_number": "LV6309038",
+                     "address": None, "expiry": "04.11.2026."}
+    # A tamper on MRZ-like text that doesn't resemble any of the 5 schema fields
+    tampers = [{"bbox_xyxy": [0, 0, 1, 1], "original_text": "P<LVAALKSNIS<<AINARS", "tampered_text": "GARBAGE"}]
+    updated = _apply_tier1_field_overrides(ground_truth, tampers)
+    assert updated == {**ground_truth, }
+
+
+def test_build_sft_examples_from_fixture_manifests(tmp_path):
+    genuine_manifest = {
+        "entries": [
+            {"path": "g0.jpg", "split": "train", "document_code": "x",
+             "ground_truth": {"name": "A B", "dob": "01.01.2000", "id_number": "X1",
+                               "address": None, "expiry": "01.01.2030"}},
+            {"path": "g1.jpg", "split": "test", "document_code": "x",
+             "ground_truth": {"name": "C D", "dob": "02.02.2000", "id_number": "X2",
+                               "address": None, "expiry": "02.02.2030"}},
+        ]
+    }
+    genuine_path = tmp_path / "genuine.json"
+    genuine_path.write_text(json.dumps(genuine_manifest), encoding="utf-8")
+
+    tier1_manifest = {"entries": [
+        {"success": True, "source_image": "g0.jpg", "forged_image": "g0_tier1.jpg",
+         "tampers": [{"bbox_xyxy": [1, 2, 3, 4], "original_text": "X1", "tampered_text": "X9"}]},
+        {"success": False, "source_image": "g0.jpg"},  # failed tamper attempts must be skipped
+    ]}
+    tier1_path = tmp_path / "tier1.json"
+    tier1_path.write_text(json.dumps(tier1_manifest), encoding="utf-8")
+
+    tier2_manifest = {"entries": [
+        {"success": True, "source_image": "g0.jpg", "forged_image": "g0_tier2.jpg", "bbox_xyxy": [5, 6, 7, 8]},
+    ]}
+    tier2_path = tmp_path / "tier2.json"
+    tier2_path.write_text(json.dumps(tier2_manifest), encoding="utf-8")
+
+    train_examples = build_sft_examples(str(genuine_path), str(tier1_path), str(tier2_path), split="train")
+    # g1.jpg is split=test, so only g0's genuine + its tier1 + tier2 derivatives land in train
+    assert len(train_examples) == 3
+    tiers = {e["tier"] for e in train_examples}
+    assert tiers == {"genuine", "tier1_field_tamper", "tier2_splicing"}
+
+    tier1_example = next(e for e in train_examples if e["tier"] == "tier1_field_tamper")
+    assert tier1_example["target"]["id_number"] == "X9"  # overridden by the tamper
+    assert tier1_example["target"]["tamper_verdict"] == "tampered"
+    assert tier1_example["target"]["tamper_regions"] == [[1, 2, 3, 4]]
+
+    test_examples = build_sft_examples(str(genuine_path), str(tier1_path), str(tier2_path), split="test")
+    assert len(test_examples) == 1
+    assert test_examples[0]["tier"] == "genuine"
+
+
+def test_build_conversation_structure():
+    conv = build_conversation("img.jpg", {"name": "A"})
+    assert conv[0]["role"] == "user"
+    assert conv[0]["content"][0] == {"type": "image", "image": "img.jpg"}
+    assert conv[1]["role"] == "assistant"
+    assert json.loads(conv[1]["content"][0]["text"]) == {"name": "A"}
+
+
+def test_latest_checkpoint_picks_highest_step(tmp_path):
+    assert latest_checkpoint(str(tmp_path / "does_not_exist")) is None
+    (tmp_path / "step_10").mkdir()
+    (tmp_path / "step_200").mkdir()
+    (tmp_path / "step_30").mkdir()
+    assert latest_checkpoint(str(tmp_path)).endswith("step_200")
 
 
 def test_build_genuine_manifest_stratifies_by_document_code(tmp_path):

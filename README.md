@@ -1,0 +1,122 @@
+# Adversarially-Robust Identity Document Verification System
+
+*(Working name — a real name gets picked once the system takes shape. Generic
+package name for now: `doc_verification_system`.)*
+
+A fine-tuned vision-language model system that extracts identity document fields,
+detects and localizes tampering, reasons about risk in natural language, retrieves
+similar past-flagged cases as supporting evidence, and recommends a risk-tiered
+decision (auto-approve / auto-reject / human-review) under a configurable cost
+tradeoff — with production benchmarking (fp16/INT8/INT4) reported alongside.
+
+Built as a research-grade portfolio project: real fine-tuning (SFT + QLoRA, then
+DPO), not API calls to a hosted model; every experiment reports sample sizes and
+confidence intervals, not single-point accuracy; failures are documented, not
+hidden.
+
+**Status:** scaffolding complete (Phase 1). No trained model yet — see
+[Build Status](#build-status) below.
+
+## System Overview
+
+```
+LAYER 3: Operating System (monitoring, cost, drift)      [optional extension]
+  LAYER 2: Decision Layer (risk tiers, cost tradeoff)
+    LAYER 1: Detection Core (VLM, forgery, eval)
+```
+
+Layer 1 must be fully solid before Layer 2 starts; Layer 2 must work end to end
+before Layer 3 (optional) is attempted.
+
+## What it does
+
+1. Extracts structured fields (name, DOB, ID number, address, expiry) as JSON
+2. Detects whether the document is tampered/forged, and localizes where
+3. Explains its reasoning in natural language
+4. Retrieves similar past-flagged cases to support its verdict
+5. Recommends a risk-tiered decision based on a configurable cost matrix
+6. Reports its own production cost/latency tradeoffs at different quantization levels
+
+## Core technical approach
+
+- **Model:** Qwen2.5-VL-7B-Instruct, fine-tuned with QLoRA (4-bit)
+- **Training:** SFT for extraction + tamper detection, then DPO for explanation
+  quality (chosen vs. rejected reasoning pairs)
+- **Forgery generation:** 5 escalating tiers — field tampering, image splicing,
+  diffusion-based inpainting, fully synthetic generation, recapture/moiré simulation
+- **Core experiment:** leave-one-attack-tier-out generalization test across all 5
+  tiers, with confidence intervals
+- **Adversarial rounds:** 3 rounds of targeted retraining based on observed failure
+  modes, with an accuracy curve tracked across rounds
+- **Retrieval:** embedding-based similarity search (sentence-transformers) against
+  past-flagged cases
+- **Decision layer:** cost matrix (false-accept / false-reject / manual-review,
+  reasoned assumptions, clearly labeled) driving a threshold sweep and cost curve
+- **Production benchmarking:** fp16 vs. INT8 vs. INT4 — accuracy, latency, and
+  estimated cost-per-verification at hypothetical volume
+
+## Compute
+
+- Local dev (VS Code, CPU): all code, data generation, eval scripts, and the
+  Streamlit app are written and smoke-tested on tiny samples here.
+- Real GPU training (SFT, DPO, adversarial rounds) runs remotely on Kaggle's free
+  tier (T4/P100, ~30 GPU-hrs/week) via the Kaggle CLI.
+- Every training/eval script is config-driven (`config/training_config.yaml` ->
+  `environment: local|kaggle`) so it runs identically either way — see
+  `src/utils/config_utils.py`.
+
+## Data
+
+Public/synthetic only — **no real fraud data**. Base documents from MIDV-2020 (or
+equivalent public ID dataset); all forgeries are generated, not sourced. Clearly
+labeled throughout.
+
+## Non-goals (explicit scope cuts, not oversights)
+
+- No RL-based self-play forger — forgery generation is scripted/targeted (future
+  work, see [writeup/project_report.md](writeup/project_report.md))
+- No real fraud data sourcing
+- No autonomous orchestrating agent layer — adversarial rounds are manually/scriptedly
+  triggered
+- Layer 3 (drift simulation, cost dashboard) is optional/extension, time-boxed
+  behind Layers 1 and 2
+
+## Repo layout
+
+See folder tree in [writeup/project_report.md](writeup/project_report.md) methods
+section once populated; for now, `src/` mirrors the system's layers
+(`data_generation/`, `training/`, `retrieval/`, `eval/`, `decision/`, `monitoring/`),
+`config/` holds all hyperparameters and cost assumptions, `results/` holds every
+generated chart/table, `writeup/` holds the paper-style report.
+
+## Setup
+
+```bash
+python -m venv venv
+venv\Scripts\activate       # Windows; source venv/bin/activate on macOS/Linux
+pip install -r requirements.txt
+cp .env.example .env        # fill in HF_TOKEN / WANDB_API_KEY as needed
+```
+
+Kaggle CLI auth (only needed once you reach real GPU training in Phase 4+):
+create an API token at kaggle.com/settings, place `kaggle.json` at
+`~/.kaggle/kaggle.json` (or `%USERPROFILE%\.kaggle\kaggle.json` on Windows).
+
+## Build Status
+
+| Phase | What | Status |
+|---|---|---|
+| 1 | Scaffold (folders, configs, requirements, README) | Done |
+| 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Not started |
+| 3 | Baselines (zero-shot VLM, OCR) | Not started |
+| 4 | Core SFT + QLoRA fine-tuning | Not started |
+| 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Not started |
+| 6 | Core experiments (leave-one-out, adversarial rounds) | Not started |
+| 7 | Decision layer (risk tiering, cost simulation) | Not started |
+| 8 | DPO + retrieval | Not started |
+| 9 | Quantization benchmarking | Not started |
+| 10 | Layer 3 (optional) | Not started |
+| 11 | Demo + writeup | Not started |
+
+Results, charts, and the full paper-style writeup will be embedded here as each
+phase completes.

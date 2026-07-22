@@ -1,0 +1,67 @@
+# Training run settings. environment: "local" runs tiny-sample smoke tests on CPU;
+# environment: "kaggle" runs real training on a T4/P100. Same script, different config —
+# see src/utils for the env-resolution helper (Phase 2+).
+
+environment: "local"   # "local" | "kaggle" — override via CLI flag, never hardcode in scripts
+
+paths:
+  local:
+    data_root: "./data"
+    output_root: "./results"
+    checkpoint_root: "./checkpoints"
+  kaggle:
+    # Kaggle mounts input datasets read-only under /kaggle/input and writable
+    # scratch under /kaggle/working — these must be dataset/kernel slugs you push.
+    data_root: "/kaggle/input/doc-verification-data"
+    output_root: "/kaggle/working/results"
+    checkpoint_root: "/kaggle/working/checkpoints"
+
+sft:
+  # Batch size 1 + grad accumulation 16 (effective batch 16) is what fits a 7B QLoRA
+  # forward/backward pass on a T4's 16GB VRAM with 1280px images. Do not raise
+  # per-device batch size without re-checking VRAM headroom on Kaggle first.
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 2.0e-4
+  num_epochs: 3
+  warmup_ratio: 0.03
+  lr_scheduler_type: "cosine"
+  max_seq_length: 2048
+  save_strategy: "epoch"
+  logging_steps: 10
+  # Kaggle free tier gives ~30 GPU-hrs/week — 3 epochs on a few-thousand-sample
+  # synthetic set is sized to fit comfortably within a single session (~9hr max runtime).
+  # If dataset size grows materially, drop epochs before raising session count.
+
+dpo:
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 5.0e-5
+  num_epochs: 1
+  beta: 0.1                 # DPO temperature; 0.1 is the standard default, not tuned yet
+  max_seq_length: 2048
+
+adversarial_rounds:
+  # 3 rounds chosen deliberately: each round = eval on held-out tier -> mine failures ->
+  # targeted retrain. More rounds would be more rigorous but 3 is the most that fits
+  # Kaggle's weekly free-GPU quota alongside the other experiments (leave-one-out, DPO,
+  # quantization bench) in the same week. Flagged here rather than silently scaled down.
+  num_rounds: 3
+  failure_sample_cap: 200   # max mined failure cases retrained on per round, VRAM/time bound
+
+leave_one_out:
+  tiers:
+    - tier1_field_tamper
+    - tier2_splicing
+    - tier3_inpainting
+    - tier4_full_synthetic
+    - tier5_recapture
+  # Each fold trains on 4 tiers, evals generalization to the held-out 5th.
+  # Bootstrap resampling for CIs rather than repeated full retrains — repeated retrains
+  # per fold (for true variance estimates) would exceed the weekly GPU quota.
+  bootstrap_resamples: 1000
+  confidence_level: 0.95
+
+quantization_bench:
+  precisions: ["fp16", "int8", "int4"]
+  eval_sample_size: 200      # fixed subset so latency comparisons are apples-to-apples

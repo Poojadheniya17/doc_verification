@@ -1,0 +1,45 @@
+# Model + LoRA hyperparameters.
+# Rationale: Qwen2.5-VL-7B is the largest VLM that fits QLoRA 4-bit fine-tuning on a
+# single 16GB T4 (Kaggle's free tier) — bigger variants (32B/72B) would need multi-GPU
+# or paid compute, smaller VLMs (2B/3B class) sacrifice too much OCR/layout grounding
+# for dense ID-document text.
+
+model:
+  name: "Qwen/Qwen2.5-VL-7B-Instruct"
+  revision: "main"
+  trust_remote_code: true
+  torch_dtype: "bfloat16"           # compute dtype; base weights loaded in 4-bit (see quantization block)
+  max_image_size: 1280              # px, longer side — balances OCR legibility vs vision-token budget
+
+quantization:
+  # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.
+  # This is what makes 7B trainable on a T4's 16GB VRAM at all.
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+lora:
+  # Rank 16 / alpha 32 is a standard starting point for 7B QLoRA SFT — enough capacity
+  # for extraction+detection without overfitting on a small synthetic dataset.
+  # Revisit rank upward only if underfitting shows in Phase 4 clean-eval numbers.
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+generation:
+  # Deterministic decoding for extraction/detection (reproducible eval); explanation
+  # generation (DPO stage) can override with sampling at inference time if needed.
+  max_new_tokens: 768
+  do_sample: false
+  temperature: 1.0

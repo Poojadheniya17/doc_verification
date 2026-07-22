@@ -1,0 +1,42 @@
+# Core DL stack
+torch
+torchvision
+transformers>=4.46.0
+peft
+trl
+bitsandbytes
+accelerate
+diffusers
+
+# Image / OCR
+opencv-python
+pillow
+pytesseract
+easyocr
+
+# Retrieval / embeddings
+sentence-transformers
+faiss-cpu
+
+# Decision layer / stats
+scikit-learn
+scipy
+pandas
+numpy
+
+# Viz / demo
+matplotlib
+streamlit
+
+# Experiment tracking
+wandb
+
+# Config / env
+pyyaml
+python-dotenv
+
+# Kaggle CLI (train remotely; not needed for local CPU dev)
+kaggle
+
+# Dev / testing
+pytest

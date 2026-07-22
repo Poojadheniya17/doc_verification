@@ -18,6 +18,7 @@ exists in the first place.
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -228,7 +229,12 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         save_strategy=sft_cfg["save_strategy"],
         logging_steps=sft_cfg["logging_steps"],
         bf16=True,
-        report_to=["wandb"] if training_config["environment"] == "kaggle" else [],
+        # Gated on an actual WANDB_API_KEY being present, not just
+        # environment == "kaggle" — found the hard way on the first real
+        # Kaggle run: Trainer tried to wandb.init() with no key configured at
+        # all and crashed with UsageError before a single training step ran.
+        # Set WANDB_API_KEY as a Kaggle secret to turn this back on.
+        report_to=["wandb"] if os.environ.get("WANDB_API_KEY") else [],
     )
     trainer = Trainer(model=model, args=training_args, train_dataset=SFTDataset(train_examples),
                        data_collator=collate)

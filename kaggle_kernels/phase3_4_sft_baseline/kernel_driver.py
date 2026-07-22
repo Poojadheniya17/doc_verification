@@ -14,6 +14,7 @@ seen any training step.
 
 import subprocess
 import sys
+from pathlib import Path
 
 # Kaggle's base image doesn't have a new enough transformers for Qwen2.5-VL,
 # or qwen_vl_utils at all.
@@ -23,40 +24,105 @@ subprocess.run(
     check=True,
 )
 
-DATASET_ROOT = "/kaggle/input/doc-verification-data"
-sys.path.insert(0, DATASET_ROOT)
+# Two prior attempts both failed at `from src.eval.clean_eval import ...` with
+# `ModuleNotFoundError: No module named 'src'`, for reasons that weren't
+# obvious from the traceback alone (kaggle datasets files/download -f both
+# confirm src/eval/clean_eval.py genuinely exists in the uploaded dataset).
+# Printing exactly what's mounted, right before the import that keeps
+# failing, so this doesn't take a third blind guess.
+def _walk_print(root: Path, max_depth: int, prefix: str = "") -> None:
+    if max_depth < 0 or not root.exists():
+        return
+    try:
+        entries = sorted(root.iterdir())
+    except (PermissionError, NotADirectoryError):
+        return
+    for entry in entries:
+        print(f"{prefix}{entry}", flush=True)
+        if entry.is_dir():
+            _walk_print(entry, max_depth - 1, prefix + "  ")
+
+
+print("=== /kaggle/input recursive listing (depth 4) ===", flush=True)
+_walk_print(Path("/kaggle/input"), max_depth=4)
+
+# Second Kaggle CLI ("kaggle" 2.2.3, pulled in "kagglesdk" as a dependency)
+# mounts datasets one level deeper than the classic convention this project's
+# configs assumed: /kaggle/input/datasets/<owner>/<slug> instead of
+# /kaggle/input/<slug> — found from the recursive listing above after two
+# prior runs both hit ModuleNotFoundError with the classic path. Trying both,
+# in order, rather than hardcoding the new one in case this varies by kernel
+# type or changes again.
+candidates = [
+    Path("/kaggle/input/doc-verification-data"),
+    Path("/kaggle/input/datasets/poojadheniya/doc-verification-data"),
+]
+INPUT_ROOT = next((c for c in candidates if (c / "src").is_dir()), None)
+if INPUT_ROOT is None:
+    raise RuntimeError(f"Could not find the mounted dataset's src/ dir under any of {candidates} — "
+                        f"see the recursive /kaggle/input listing above for the real path.")
+print(f"=== Resolved INPUT_ROOT = {INPUT_ROOT} ===", flush=True)
+
+sys.path.insert(0, str(INPUT_ROOT))
+print(f"=== sys.path[0] = {sys.path[0]} ===", flush=True)
+
+# Manifests store image paths relative to the repo root (e.g.
+# "data/raw/midv2020_templates/images/alb_id/04.jpg") because that's how every
+# local run works — always invoked with cwd already at the repo root. Kaggle's
+# script kernel runs with cwd elsewhere (/kaggle/working), so those relative
+# paths 404'd on the very first image (FileNotFoundError, not a code bug in
+# clean_eval.py/sft_train.py — same relative-path convention that works fine
+# locally). chdir into INPUT_ROOT rather than rewriting every manifest again.
+import os  # noqa: E402
+os.chdir(INPUT_ROOT)
+print(f"=== cwd = {os.getcwd()} ===", flush=True)
+
+import yaml  # noqa: E402
 
 from src.eval.clean_eval import run as run_clean_eval  # noqa: E402
 from src.training.sft_train import train as run_sft_train  # noqa: E402
 
-# The uploaded dataset's training_config.yaml has kaggle.data_root correctly
-# set to f"{DATASET_ROOT}/data" as of the version pushed alongside this kernel
-# (see config/training_config.yaml's comment for why that path matters) — no
-# in-memory override needed here.
-TRAINING_CONFIG_PATH = f"{DATASET_ROOT}/config/training_config.yaml"
-MODEL_CONFIG_PATH = f"{DATASET_ROOT}/config/model_config.yaml"
+# training_config.yaml's kaggle.data_root is a static string baked in when the
+# dataset was packaged — it assumed the classic /kaggle/input/<slug> mount
+# path. Since INPUT_ROOT is now resolved dynamically (see candidates above,
+# precisely because that assumption already broke once), data_root must be
+# patched to match whichever candidate actually matched, in memory, rather
+# than trusting the static value in the uploaded file.
+MODEL_CONFIG_PATH = str(INPUT_ROOT / "config" / "model_config.yaml")
+with open(INPUT_ROOT / "config" / "training_config.yaml", encoding="utf-8") as f:
+    _training_config = yaml.safe_load(f)
+_training_config["paths"]["kaggle"]["data_root"] = str(INPUT_ROOT / "data")
+TRAINING_CONFIG_PATH = "/kaggle/working/training_config_resolved.yaml"
+with open(TRAINING_CONFIG_PATH, "w", encoding="utf-8") as f:
+    yaml.safe_dump(_training_config, f)
+print(f"=== training_config.yaml kaggle.data_root patched to {_training_config['paths']['kaggle']['data_root']} ===",
+      flush=True)
 
-print("=" * 70)
-print("PHASE 3: zero-shot baseline (Qwen2.5-VL-7B-Instruct, 4-bit)")
-print("=" * 70)
+GENUINE_MANIFEST = str(INPUT_ROOT / "data" / "processed" / "genuine_manifest_templates.json")
+TIER1_MANIFEST = str(INPUT_ROOT / "data" / "synthetic_forgeries" / "tier1_field_tamper" / "tier1_manifest.json")
+TIER2_MANIFEST = str(INPUT_ROOT / "data" / "synthetic_forgeries" / "tier2_splicing" / "tier2_manifest.json")
+
+print("=" * 70, flush=True)
+print("PHASE 3: zero-shot baseline (Qwen2.5-VL-7B-Instruct, 4-bit)", flush=True)
+print("=" * 70, flush=True)
 run_clean_eval(
-    genuine_manifest_path=f"{DATASET_ROOT}/data/processed/genuine_manifest_templates.json",
+    genuine_manifest_path=GENUINE_MANIFEST,
     model_name="Qwen/Qwen2.5-VL-7B-Instruct",
-    tier1_manifest_path=f"{DATASET_ROOT}/data/synthetic_forgeries/tier1_field_tamper/tier1_manifest.json",
-    tier2_manifest_path=f"{DATASET_ROOT}/data/synthetic_forgeries/tier2_splicing/tier2_manifest.json",
+    tier1_manifest_path=TIER1_MANIFEST,
+    tier2_manifest_path=TIER2_MANIFEST,
     n_per_category=3,
     device="cuda",
     load_in_4bit=True,
     out_path="/kaggle/working/results/clean_eval_baseline_7b.json",
 )
 
-print("=" * 70)
-print("PHASE 4: SFT + QLoRA fine-tuning (Qwen2.5-VL-7B-Instruct)")
-print("=" * 70)
+print("=" * 70, flush=True)
+print("PHASE 4: SFT + QLoRA fine-tuning (Qwen2.5-VL-7B-Instruct)", flush=True)
+print("=" * 70, flush=True)
 run_sft_train(
     model_config_path=MODEL_CONFIG_PATH,
     training_config_path=TRAINING_CONFIG_PATH,
     environment="kaggle",
 )
 
-print("Done. Outputs under /kaggle/working/results and /kaggle/working/checkpoints.")
+print("Done. Outputs under /kaggle/working/results and /kaggle/working/checkpoints.", flush=True)

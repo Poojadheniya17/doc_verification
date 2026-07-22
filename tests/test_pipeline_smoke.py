@@ -9,6 +9,7 @@ clone or CI. That path is verified manually (see README data section) instead;
 this file stays fast and dependency-free so it can run on every commit.
 """
 
+import json
 import random
 from pathlib import Path
 
@@ -16,10 +17,13 @@ import pytest
 import yaml
 from PIL import Image
 
-from src.data_generation.acquire_dataset import build_genuine_manifest
+from src.data_generation.acquire_dataset import _load_annotations, _map_ground_truth, build_genuine_manifest
 from src.data_generation.degrade import DEGRADATION_KINDS, degrade_image
 from src.data_generation.field_tamper import _mutate_digits
+from src.eval.clean_eval import _extract_json, build_eval_sample
+from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
 from src.utils.image_utils import unique_stem
+from src.utils.ocr_baseline import _DATE_RE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -112,6 +116,111 @@ def test_unique_stem_disambiguates_same_filename_different_parent():
     a = unique_stem("data/raw/images/code_a/00.jpg")
     b = unique_stem("data/raw/images/code_b/00.jpg")
     assert a != b
+
+
+def test_date_regex_handles_mixed_separators():
+    """Regression test: EasyOCR reads some MIDV-2020 dates with a stray space
+    after the first separator, e.g. '28. 09.1974 .' for '28.09.1974'. An earlier
+    version of _DATE_RE required exactly one separator char between groups and
+    silently failed to match this, which made the OCR baseline report the
+    wrong field (date of issue) as DOB on a real sample image. Fixed by
+    matching one-or-more separator chars.
+    """
+    assert _DATE_RE.search("28. 09.1974 .").group().strip() == "28. 09.1974"
+    assert _DATE_RE.search("04.11.2026").group() == "04.11.2026"
+    assert _DATE_RE.search("not a date") is None
+
+
+def test_bootstrap_ci_reports_n_and_bounds():
+    result = bootstrap_ci([1, 1, 1, 0, 1, 0, 1, 1, 1, 1])
+    assert result["n"] == 10
+    assert 0.0 <= result["ci_low"] <= result["mean"] <= result["ci_high"] <= 1.0
+
+
+def test_field_similarity_and_exact_match_diverge_on_reformatted_dates():
+    similarity = field_similarity("04.11.2026", "2026-11-04")
+    exact = field_exact_match("04.11.2026", "2026-11-04")
+    assert 0.0 < similarity < 1.0
+    assert exact == 0.0
+
+
+def _make_via_annotation(path: Path, filename: str, fields: dict):
+    via = {
+        "_via_img_metadata": {
+            f"{filename}0": {
+                "filename": filename,
+                "regions": [
+                    {"region_attributes": {"field_name": k, "value": v}} for k, v in fields.items()
+                ],
+            }
+        }
+    }
+    path.write_text(json.dumps(via, ensure_ascii=False), encoding="utf-8")
+
+
+def test_load_annotations_handles_non_ascii_scripts(tmp_path):
+    """Regression test: MIDV-2020 spans 10 countries' scripts (Cyrillic, Greek,
+    Azerbaijani, extended Latin). Windows' platform-default open() encoding
+    (cp1252) raised UnicodeDecodeError on 6 of the 10 real annotation files —
+    found while inspecting them by hand. _load_annotations must always open
+    with encoding='utf-8' regardless of platform default.
+    """
+    annotations_dir = tmp_path / "annotations"
+    annotations_dir.mkdir()
+    _make_via_annotation(
+        annotations_dir / "rus_internalpassport.json", "00.jpg",
+        {"name": "Александр", "surname": "Иванов", "birth_date": "01.01.1990", "number": "1234567890"},
+    )
+    result = _load_annotations(annotations_dir, "rus_internalpassport")
+    assert result["00.jpg"]["name"] == "Александр"
+    mapped = _map_ground_truth(result["00.jpg"])
+    assert mapped["name"] == "Александр Иванов"
+    assert mapped["dob"] == "01.01.1990"
+
+
+def test_map_ground_truth_prefers_universal_number_field():
+    mapped = _map_ground_truth({
+        "name": "AINARS", "surname": "ALKSNIS", "birth_date": "28.09.1974.",
+        "number": "LV6309038", "id_number": "280974-14045", "expiry_date": "04.11.2026.",
+    })
+    assert mapped["id_number"] == "LV6309038"  # 'number' is present on all 10 doc codes; 'id_number' isn't
+    assert mapped["address"] is None  # no residence_line0/1 present
+
+
+def test_map_ground_truth_builds_address_from_residence_lines():
+    mapped = _map_ground_truth({"residence_line0": "MAIN ST 1", "residence_line1": "BELGRADE"})
+    assert mapped["address"] == "MAIN ST 1 BELGRADE"
+
+
+def test_extract_json_handles_markdown_fenced_output():
+    raw = 'Sure, here is the result:\n```json\n{"name": "JOHN DOE", "tamper_verdict": "genuine"}\n```'
+    parsed = _extract_json(raw)
+    assert parsed == {"name": "JOHN DOE", "tamper_verdict": "genuine"}
+
+
+def test_extract_json_returns_none_on_unparseable_output():
+    assert _extract_json("I cannot determine the fields from this image.") is None
+
+
+def test_build_eval_sample_balances_categories(tmp_path):
+    genuine_manifest = {
+        "entries": [
+            {"path": f"g{i}.jpg", "split": "test", "ground_truth": {"name": f"Person {i}"}}
+            for i in range(5)
+        ]
+    }
+    genuine_path = tmp_path / "genuine.json"
+    genuine_path.write_text(json.dumps(genuine_manifest), encoding="utf-8")
+
+    tier1_manifest = {"entries": [{"forged_image": f"t1_{i}.jpg", "success": True} for i in range(5)]}
+    tier1_path = tmp_path / "tier1.json"
+    tier1_path.write_text(json.dumps(tier1_manifest), encoding="utf-8")
+
+    examples = build_eval_sample(str(genuine_path), str(tier1_path), None, n_per_category=2)
+    assert len(examples) == 4  # 2 genuine + 2 tier1
+    labels = [e["true_label"] for e in examples]
+    assert labels.count("genuine") == 2
+    assert labels.count("tampered") == 2
 
 
 def test_build_genuine_manifest_stratifies_by_document_code(tmp_path):

@@ -5,6 +5,11 @@
 # for dense ID-document text.
 
 model:
+  # This is the real target model — the one Phase 4+ fine-tunes and the one the
+  # reported baseline/final numbers are for. src/eval/clean_eval.py's
+  # --model-name defaults to the much lighter Qwen2.5-VL-3B-Instruct instead,
+  # purely so the zero-shot eval pipeline can be smoke-tested on local CPU;
+  # every result it writes is labeled with whichever model_name actually ran.
   name: "Qwen/Qwen2.5-VL-7B-Instruct"
   revision: "main"
   trust_remote_code: true

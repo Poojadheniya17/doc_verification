@@ -104,7 +104,7 @@ def splice_manifest(genuine_manifest_path: str, out_dir: str, seed: int = 42,
     (any document code) and attempts a splice for each pair. `limit` caps how
     many source images get processed (donor pool is always the full manifest).
     """
-    manifest = json.loads(Path(genuine_manifest_path).read_text())
+    manifest = json.loads(Path(genuine_manifest_path).read_text(encoding="utf-8"))
     all_entries = manifest["entries"]
     entries = all_entries[:limit] if limit else all_entries
     rng = random.Random(seed)
@@ -122,6 +122,6 @@ def splice_manifest(genuine_manifest_path: str, out_dir: str, seed: int = 42,
     n_success = sum(r["success"] for r in results)
     out_manifest_path = Path(out_dir) / "tier2_manifest.json"
     out_manifest_path.write_text(json.dumps({"num_attempted": len(results), "num_success": n_success,
-                                              "entries": results}, indent=2))
+                                              "entries": results}, indent=2), encoding="utf-8")
     logger.info(f"Tier 2 splicing: {n_success}/{len(results)} succeeded -> {out_manifest_path}")
     return results

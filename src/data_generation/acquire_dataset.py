@@ -149,10 +149,51 @@ def acquire(
         "extract_dir": str(extract_dir),
     }
     manifest_path = out_root / f"midv2020_{archive}_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     logger.info(f"Wrote manifest to {manifest_path}: {manifest['num_files_extracted']} files, "
                 f"codes={codes_seen}, partial={is_partial}")
     return manifest
+
+
+def _load_annotations(annotations_dir: Path, code: str) -> dict[str, dict[str, str]]:
+    """Loads MIDV-2020's VIA-format annotation file for one document code and
+    returns {filename: {field_name: value}}.
+
+    Must open with explicit encoding="utf-8" — this dataset spans 10 countries'
+    scripts (Cyrillic for rus_internalpassport, Greek for grc_passport, Azerbaijani
+    for aze_passport, etc.), and Windows' platform-default encoding (cp1252) fails
+    to decode 6 of the 10 annotation files outright. Found by hitting
+    UnicodeDecodeError while inspecting these files with a bare open() call.
+    """
+    annotation_path = annotations_dir / f"{code}.json"
+    if not annotation_path.exists():
+        return {}
+    data = json.loads(annotation_path.read_text(encoding="utf-8"))
+    by_filename = {}
+    for entry in data.get("_via_img_metadata", {}).values():
+        fields = {r["region_attributes"]["field_name"]: r["region_attributes"]["value"]
+                  for r in entry["regions"] if r["region_attributes"].get("value")}
+        by_filename[entry["filename"]] = fields
+    return by_filename
+
+
+def _map_ground_truth(fields: dict[str, str]) -> dict[str, str | None]:
+    """Maps MIDV-2020's per-document-type field_name schema (which varies: e.g.
+    'number' is the passport/ID number on every one of the 10 codes, but only
+    some codes also have a separate 'id_number' personal code, and 'residence_line0/1'
+    (address) only appears on srb_passport — the rest have no address field at
+    all, which is realistic: most ID documents in this dataset simply don't
+    print one) onto this project's target extraction schema.
+    """
+    name_parts = [fields.get(p) for p in ("name", "surname") if fields.get(p)]
+    address_parts = [fields.get(f"residence_line{i}") for i in (0, 1) if fields.get(f"residence_line{i}")]
+    return {
+        "name": " ".join(name_parts) if name_parts else None,
+        "dob": fields.get("birth_date"),
+        "id_number": fields.get("number"),
+        "address": " ".join(address_parts) if address_parts else None,
+        "expiry": fields.get("expiry_date"),
+    }
 
 
 def build_genuine_manifest(
@@ -164,9 +205,13 @@ def build_genuine_manifest(
     """Assigns each genuine base image to train/val/test, stratified per document
     code so every split sees every doc type in roughly the same proportion —
     important with only 2-10 codes present, where a plain random split could
-    starve val/test of an entire document type by chance.
+    starve val/test of an entire document type by chance. Also attaches
+    ground-truth extraction fields from MIDV-2020's annotations/ when present
+    (see _load_annotations) — needed for real extraction-accuracy scoring in
+    clean_eval.py, not just tamper-detection accuracy.
     """
     images_dir = extract_dir / "images"
+    annotations_dir = extract_dir / "annotations"
     by_code: dict[str, list[str]] = {}
     for code_dir in sorted(images_dir.iterdir()) if images_dir.exists() else []:
         if code_dir.is_dir():
@@ -175,6 +220,7 @@ def build_genuine_manifest(
     rng = random.Random(seed)
     entries = []
     for code, paths in by_code.items():
+        annotations = _load_annotations(annotations_dir, code)
         shuffled = paths[:]
         rng.shuffle(shuffled)
         n = len(shuffled)
@@ -182,7 +228,13 @@ def build_genuine_manifest(
         n_val = int(n * split_ratios[1])
         for i, path in enumerate(shuffled):
             split = "train" if i < n_train else ("val" if i < n_train + n_val else "test")
-            entries.append({"path": path, "document_code": code, "split": split})
+            raw_fields = annotations.get(Path(path).name, {})
+            entries.append({
+                "path": path,
+                "document_code": code,
+                "split": split,
+                "ground_truth": _map_ground_truth(raw_fields) if raw_fields else None,
+            })
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -193,7 +245,7 @@ def build_genuine_manifest(
         "num_document_codes": len(by_code),
         "entries": entries,
     }
-    out_path.write_text(json.dumps(manifest, indent=2))
+    out_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     logger.info(f"Wrote genuine-image manifest to {out_path}: {len(entries)} images "
                 f"across {len(by_code)} document codes")
     return manifest

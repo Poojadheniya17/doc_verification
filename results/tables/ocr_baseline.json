@@ -1,0 +1,248 @@
+{
+  "engine": "easyocr",
+  "n_examples": 10,
+  "field_similarity": {
+    "name": {
+      "mean": 0.6048805838124723,
+      "ci_low": 0.5717608359133126,
+      "ci_high": 0.6393129883532359,
+      "n": 10
+    },
+    "dob": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 10
+    },
+    "id_number": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 10
+    },
+    "expiry": {
+      "mean": 0.8942105263157896,
+      "ci_low": 0.8826315789473684,
+      "ci_high": 0.9,
+      "n": 10
+    }
+  },
+  "field_exact_match": {
+    "name": {
+      "mean": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "n": 10
+    },
+    "dob": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 10
+    },
+    "id_number": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 10
+    },
+    "expiry": {
+      "mean": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "n": 10
+    }
+  },
+  "examples": [
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\04.jpg",
+      "predicted": {
+        "name": "Albrup",
+        "dob": "21-03-1985",
+        "id_number": "807908701",
+        "address": null,
+        "expiry": "09-06-2018",
+        "engine": "easyocr",
+        "num_ocr_tokens": 27
+      },
+      "ground_truth": {
+        "name": "Agron Albrup",
+        "dob": "21-03-1985",
+        "id_number": "807908701",
+        "address": null,
+        "expiry": "09-06-2028"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\54.jpg",
+      "predicted": {
+        "name": "Dedej",
+        "dob": "01-02-1999",
+        "id_number": "400211657",
+        "address": null,
+        "expiry": "04-07-2016",
+        "engine": "easyocr",
+        "num_ocr_tokens": 27
+      },
+      "ground_truth": {
+        "name": "Bajram Dedej",
+        "dob": "01-02-1999",
+        "id_number": "400211657",
+        "address": null,
+        "expiry": "04-07-2026"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\75.jpg",
+      "predicted": {
+        "name": "Gecaj",
+        "dob": "18-05-1971",
+        "id_number": "209694597",
+        "address": null,
+        "expiry": "1-02-2019",
+        "engine": "easyocr",
+        "num_ocr_tokens": 24
+      },
+      "ground_truth": {
+        "name": "Delina Gecaj",
+        "dob": "18-05-1971",
+        "id_number": "209694597",
+        "address": null,
+        "expiry": "01-02-2029"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\11.jpg",
+      "predicted": {
+        "name": "Amiti",
+        "dob": "25-06-1974",
+        "id_number": "847259219",
+        "address": null,
+        "expiry": "05-03-2015",
+        "engine": "easyocr",
+        "num_ocr_tokens": 26
+      },
+      "ground_truth": {
+        "name": "Albion Amiti",
+        "dob": "25-06-1974",
+        "id_number": "847259219",
+        "address": null,
+        "expiry": "05-03-2025"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\69.jpg",
+      "predicted": {
+        "name": "Fazliu",
+        "dob": "24-03-2002",
+        "id_number": "687803894",
+        "address": null,
+        "expiry": "13-06-2015",
+        "engine": "easyocr",
+        "num_ocr_tokens": 26
+      },
+      "ground_truth": {
+        "name": "Dardana Fazliu",
+        "dob": "24-03-2002",
+        "id_number": "687803894",
+        "address": null,
+        "expiry": "13-06-2025"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\86.jpg",
+      "predicted": {
+        "name": "Bushati",
+        "dob": "19-08-1952",
+        "id_number": "113966062",
+        "address": null,
+        "expiry": "29-07-2015",
+        "engine": "easyocr",
+        "num_ocr_tokens": 26
+      },
+      "ground_truth": {
+        "name": "Doruntina Bushati",
+        "dob": "19-08-1952",
+        "id_number": "113966062",
+        "address": null,
+        "expiry": "29-07-2025"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\13.jpg",
+      "predicted": {
+        "name": "Bajraktari",
+        "dob": "08-12-1999",
+        "id_number": "079318707",
+        "address": null,
+        "expiry": "22-04-2017",
+        "engine": "easyocr",
+        "num_ocr_tokens": 28
+      },
+      "ground_truth": {
+        "name": "Aleksio Bajraktari",
+        "dob": "08-12-1999",
+        "id_number": "079318707",
+        "address": null,
+        "expiry": "22-04-2027"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\17.jpg",
+      "predicted": {
+        "name": "Bardhi",
+        "dob": "16-11-1972",
+        "id_number": "159776250",
+        "address": null,
+        "expiry": "31-01-2018",
+        "engine": "easyocr",
+        "num_ocr_tokens": 26
+      },
+      "ground_truth": {
+        "name": "Alketa Bardhi",
+        "dob": "16-11-1972",
+        "id_number": "159776250",
+        "address": null,
+        "expiry": "31-01-2028"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\28.jpg",
+      "predicted": {
+        "name": "Boja",
+        "dob": "23-07-1998",
+        "id_number": "489950476",
+        "address": null,
+        "expiry": "13-10-2017",
+        "engine": "easyocr",
+        "num_ocr_tokens": 25
+      },
+      "ground_truth": {
+        "name": "Anxhela Boja",
+        "dob": "23-07-1998",
+        "id_number": "489950476",
+        "address": null,
+        "expiry": "13-10-2027"
+      }
+    },
+    {
+      "image_path": "data\\raw\\midv2020_templates\\images\\alb_id\\31.jpg",
+      "predicted": {
+        "name": "Brozi",
+        "dob": "11-10-1979",
+        "id_number": "085196111",
+        "address": null,
+        "expiry": "17-06-2017",
+        "engine": "easyocr",
+        "num_ocr_tokens": 27
+      },
+      "ground_truth": {
+        "name": "Ardian Brozi",
+        "dob": "11-10-1979",
+        "id_number": "085196111",
+        "address": null,
+        "expiry": "17-06-2027"
+      }
+    }
+  ]
+}

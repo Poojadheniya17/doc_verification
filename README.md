@@ -65,6 +65,21 @@ before Layer 3 (optional) is attempted.
   `environment: local|kaggle`) so it runs identically either way — see
   `src/utils/config_utils.py`.
 
+**Standing constraint, found in Phase 3, applies to every later phase:** this
+dev machine has only ~7.7GB total RAM (often <1GB free at idle). That's not
+just "slow for local inference" — attempting to load even Qwen2.5-VL-**3B** in
+fp32 (~12-14GB) caused severe disk thrashing rather than graceful slowness, and
+had to be killed. **No VLM loading, inference, or training happens locally on
+this machine at all, at any model size or quantization level** — not just the
+7B fine-tuning target, but even lightweight local "smoke tests" of model-loading
+code must run on Kaggle instead. Local dev is scoped to logic that doesn't need
+model weights in memory: data generation, config/manifest handling, metric
+math, prompt/parsing logic, and Streamlit UI wiring — validated with unit tests
+and mocked model outputs, not a real local forward pass. This is why Phase 3's
+zero-shot baseline numbers come from a script that's tested-but-not-yet-executed
+locally, with the real numbers deferred to a Kaggle run (see
+[results/tables/phase3_baseline_summary.md](results/tables/phase3_baseline_summary.md)).
+
 ## Data
 
 Public/synthetic only — **no real fraud data**. Base documents from MIDV-2020 (or
@@ -125,7 +140,7 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 |---|---|---|
 | 1 | Scaffold (folders, configs, requirements, README) | Done |
 | 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Done |
-| 3 | Baselines (zero-shot VLM, OCR) | Not started |
+| 3 | Baselines (zero-shot VLM, OCR) | OCR done; VLM eval built + tested, real numbers deferred to Kaggle |
 | 4 | Core SFT + QLoRA fine-tuning | Not started |
 | 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Not started |
 | 6 | Core experiments (leave-one-out, adversarial rounds) | Not started |

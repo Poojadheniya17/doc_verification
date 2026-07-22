@@ -1,7 +1,8 @@
 # Core DL stack
 torch
 torchvision
-transformers>=4.46.0
+transformers>=4.49.0  # 4.49 is the first release with Qwen2.5-VL support
+qwen-vl-utils         # Qwen's own image/video preprocessing helper for the chat template
 peft
 trl
 bitsandbytes

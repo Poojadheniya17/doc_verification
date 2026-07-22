@@ -1,14 +1,18 @@
 # Phase 2 Data Summary
 
-*Numbers reflect the local CPU smoke-scale run described below, not a full
-production dataset — see "Scale note" at the bottom.*
+*Update (Phase 3): the initial Phase 2 run used a partial (~150MB) download —
+counts below have been updated after Phase 3 completed the full download to
+get MIDV-2020's ground-truth annotations. Tier 1/2 forgery generation and
+degradation were still only run at smoke scale (10-15 images), not over the
+full 1000-image manifest — see "Scale note" at the bottom.*
 
 ## Genuine base images
 
-- Source: MIDV-2020 `templates.tar` (real public dataset, not synthetic),
-  partial download (~150MB of 863MB — see `acquire_dataset.py` docstring for why
-  a partial prefix still yields complete, valid images).
-- 175 genuine images across 2 document codes (`lva_passport`, `svk_id`)
+- Source: MIDV-2020 `templates.tar` (real public dataset, not synthetic) — full
+  863MB archive, all 10 document codes
+- 1000 genuine images across 10 document codes (100 each), all with real
+  ground-truth extraction fields (name, DOB, ID number, expiry; address only
+  where the document type prints one — see Phase 3 notes)
 - Stratified 70/15/15 train/val/test split per document code
   (`data/processed/genuine_manifest_templates.json`)
 

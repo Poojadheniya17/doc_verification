@@ -24,6 +24,9 @@ checkpoints/
 *.pt
 *.ckpt
 
+# Local Hugging Face model cache (multi-GB; re-downloaded via snapshot_download, not committed)
+.hf_cache/
+
 # Notebooks checkpoints
 .ipynb_checkpoints/
 

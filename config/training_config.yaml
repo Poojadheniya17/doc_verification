@@ -1,6 +1,13 @@
 # Training run settings. environment: "local" runs tiny-sample smoke tests on CPU;
 # environment: "kaggle" runs real training on a T4/P100. Same script, different config —
 # see src/utils for the env-resolution helper (Phase 2+).
+#
+# IMPORTANT (found in Phase 3): this dev machine has only ~7.7GB RAM. Loading
+# Qwen2.5-VL at ANY size (even 3B, even for a "quick local smoke test") caused
+# severe disk thrashing, not just slowness. "local" smoke tests must therefore
+# stop at data/manifest/config logic — no model weights ever get loaded in the
+# local environment. Any script that needs an actual forward/backward pass
+# through the VLM runs on Kaggle, full stop, regardless of model size.
 
 environment: "local"   # "local" | "kaggle" — override via CLI flag, never hardcode in scripts
 

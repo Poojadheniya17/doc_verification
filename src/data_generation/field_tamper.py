@@ -153,7 +153,7 @@ def tamper_manifest(genuine_manifest_path: str, out_dir: str, seed: int = 42,
     on CPU, so local smoke runs should pass a small limit (e.g. 10); omit it for a
     full Kaggle run over the whole manifest.
     """
-    manifest = json.loads(Path(genuine_manifest_path).read_text())
+    manifest = json.loads(Path(genuine_manifest_path).read_text(encoding="utf-8"))
     entries = manifest["entries"][:limit] if limit else manifest["entries"]
     results = []
     for i, entry in enumerate(entries):
@@ -165,6 +165,6 @@ def tamper_manifest(genuine_manifest_path: str, out_dir: str, seed: int = 42,
     n_success = sum(r["success"] for r in results)
     out_manifest_path = Path(out_dir) / "tier1_manifest.json"
     out_manifest_path.write_text(json.dumps({"num_attempted": len(results), "num_success": n_success,
-                                              "entries": results}, indent=2))
+                                              "entries": results}, indent=2), encoding="utf-8")
     logger.info(f"Tier 1 field tamper: {n_success}/{len(results)} succeeded -> {out_manifest_path}")
     return results

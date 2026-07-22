@@ -114,7 +114,7 @@ def degrade_manifest(manifest_path: str, out_dir: str, kinds: list[str] | None =
     in a manifest produced by acquire_dataset.build_genuine_manifest, and writes a
     combined degraded-set manifest to out_dir/degraded_manifest.json.
     """
-    manifest = json.loads(Path(manifest_path).read_text())
+    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     kinds = kinds or DEGRADATION_KINDS
     results = []
     for i, entry in enumerate(manifest["entries"]):
@@ -129,7 +129,8 @@ def degrade_manifest(manifest_path: str, out_dir: str, kinds: list[str] | None =
             results.append(result)
 
     out_manifest_path = Path(out_dir) / "degraded_manifest.json"
-    out_manifest_path.write_text(json.dumps({"num_images": len(results), "entries": results}, indent=2))
+    out_manifest_path.write_text(json.dumps({"num_images": len(results), "entries": results}, indent=2),
+                                  encoding="utf-8")
     logger.info(f"Degraded {len(manifest['entries'])} source images x {len(kinds)} kinds "
                 f"= {len(results)} outputs -> {out_manifest_path}")
     return results

@@ -20,6 +20,9 @@ from PIL import Image
 from src.data_generation.acquire_dataset import _load_annotations, _map_ground_truth, build_genuine_manifest
 from src.data_generation.degrade import DEGRADATION_KINDS, degrade_image
 from src.data_generation.field_tamper import _mutate_digits
+from src.data_generation.inpaint_forger import build_inpaint_mask
+from src.data_generation.recapture_sim import simulate_recapture
+from src.data_generation.synthetic_id_gen import _random_date, _random_id_number, _random_name, generate_synthetic_id
 from src.eval.clean_eval import _extract_json, build_eval_sample
 from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
 from src.training.checkpoint_utils import latest_checkpoint
@@ -301,6 +304,46 @@ def test_latest_checkpoint_picks_highest_step(tmp_path):
     (tmp_path / "step_200").mkdir()
     (tmp_path / "step_30").mkdir()
     assert latest_checkpoint(str(tmp_path)).endswith("step_200")
+
+
+def test_build_inpaint_mask_fails_gracefully_with_no_face(tmp_path):
+    src = tmp_path / "blank.jpg"
+    _make_fake_image(src, size=(400, 300))  # solid color, no detectable face
+    result = build_inpaint_mask(str(src))
+    assert result["success"] is False
+    assert result["mask"] is None
+
+
+def test_random_generators_produce_expected_formats():
+    rng = random.Random(0)
+    first, last = _random_name(rng)
+    assert first.isalpha() and last.isalpha()
+    date = _random_date(rng, 2000, 2010)
+    day, month, year = date.split(".")
+    assert 1 <= int(day) <= 28 and 1 <= int(month) <= 12 and 2000 <= int(year) <= 2010
+    id_number = _random_id_number(rng)
+    assert len(id_number) == 9
+    assert id_number[:2].isalpha() and id_number[2:].isdigit()
+
+
+def test_generate_synthetic_id_fails_gracefully_with_no_donor_face(tmp_path):
+    donor = tmp_path / "blank_donor.jpg"
+    _make_fake_image(donor, size=(400, 300))
+    result = generate_synthetic_id(str(donor), str(tmp_path / "out"), seed=1)
+    assert result["success"] is False
+
+
+def test_simulate_recapture_preserves_shape_and_is_deterministic(tmp_path):
+    src = tmp_path / "genuine.jpg"
+    _make_fake_image(src, size=(300, 200))
+    r1 = simulate_recapture(str(src), str(tmp_path / "out1"), seed=5)
+    r2 = simulate_recapture(str(src), str(tmp_path / "out2"), seed=5)
+    import numpy as np
+    from PIL import Image as PILImage
+    img1 = PILImage.open(r1["forged_image"])
+    img2 = PILImage.open(r2["forged_image"])
+    assert img1.size == (300, 200)
+    assert np.array_equal(np.array(img1), np.array(img2))  # same seed -> identical output
 
 
 def test_build_genuine_manifest_stratifies_by_document_code(tmp_path):

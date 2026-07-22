@@ -142,7 +142,7 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 | 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Done |
 | 3 | Baselines (zero-shot VLM, OCR) | OCR done; VLM eval built + tested, real numbers deferred to Kaggle |
 | 4 | Core SFT + QLoRA fine-tuning | Script + data pipeline built and tested; training run itself deferred to Kaggle |
-| 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Not started |
+| 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Tier 4/5 done; Tier 3 mask logic done, diffusion inference deferred to Kaggle |
 | 6 | Core experiments (leave-one-out, adversarial rounds) | Not started |
 | 7 | Decision layer (risk tiering, cost simulation) | Not started |
 | 8 | DPO + retrieval | Not started |

@@ -28,6 +28,7 @@ from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
 from src.training.checkpoint_utils import latest_checkpoint
 from src.training.sft_train import _apply_tier1_field_overrides, build_conversation, build_sft_examples
 from src.utils.image_utils import unique_stem
+from src.utils.kaggle_package import collect_referenced_paths, stage_package
 from src.utils.ocr_baseline import _DATE_RE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -344,6 +345,48 @@ def test_simulate_recapture_preserves_shape_and_is_deterministic(tmp_path):
     img2 = PILImage.open(r2["forged_image"])
     assert img1.size == (300, 200)
     assert np.array_equal(np.array(img1), np.array(img2))  # same seed -> identical output
+
+
+def test_collect_referenced_paths_dedupes_across_lists():
+    sft = [{"image_path": "data/a.jpg"}, {"image_path": "data/b.jpg"}]
+    eval_ = [{"image_path": "data/b.jpg"}, {"path": "data/c.jpg"}]
+    paths = collect_referenced_paths(sft, eval_)
+    assert paths == {"data/a.jpg", "data/b.jpg", "data/c.jpg"}
+
+
+def test_stage_package_copies_files_and_rewrites_manifest_paths(tmp_path):
+    # Minimal fake repo layout so stage_package's REPO_ROOT-relative copies work
+    import src.utils.kaggle_package as kp
+    fake_repo = tmp_path / "fake_repo"
+    (fake_repo / "data" / "raw").mkdir(parents=True)
+    (fake_repo / "data" / "raw" / "img0.jpg").write_bytes(b"fake-image-bytes")
+    (fake_repo / "src").mkdir()
+    (fake_repo / "src" / "dummy.py").write_text("# placeholder", encoding="utf-8")
+    (fake_repo / "config").mkdir()
+    (fake_repo / "config" / "dummy.yaml").write_text("k: v", encoding="utf-8")
+
+    manifest_path = fake_repo / "manifest.json"
+    manifest_path.write_text(json.dumps({"entries": [{"path": "data\\raw\\img0.jpg", "split": "train"}]}),
+                              encoding="utf-8")
+
+    original_root = kp.REPO_ROOT
+    kp.REPO_ROOT = fake_repo
+    try:
+        summary = stage_package(
+            image_paths={"data\\raw\\img0.jpg"},
+            manifest_paths={"m": str(manifest_path)},
+            out_dir=str(tmp_path / "staged"),
+        )
+    finally:
+        kp.REPO_ROOT = original_root
+
+    staged = Path(summary["out_dir"])
+    assert (staged / "data" / "raw" / "img0.jpg").is_file()
+    assert (staged / "src" / "dummy.py").is_file()
+    assert (staged / "config" / "dummy.yaml").is_file()
+
+    rewritten = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
+    assert rewritten["entries"][0]["path"] == "data/raw/img0.jpg"  # backslashes normalized
 
 
 def test_build_genuine_manifest_stratifies_by_document_code(tmp_path):

@@ -1,0 +1,13 @@
+{
+  "id": "poojadheniya/doc-verification-phase3-4-sft-baseline",
+  "title": "doc-verification: zero-shot baseline + SFT QLoRA",
+  "code_file": "kernel_driver.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["poojadheniya/doc-verification-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

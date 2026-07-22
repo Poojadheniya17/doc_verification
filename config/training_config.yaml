@@ -19,7 +19,14 @@ paths:
   kaggle:
     # Kaggle mounts input datasets read-only under /kaggle/input and writable
     # scratch under /kaggle/working — these must be dataset/kernel slugs you push.
-    data_root: "/kaggle/input/doc-verification-data"
+    # The dataset (poojadheniya/doc-verification-data) was packaged by
+    # src/utils/kaggle_package.py preserving the local repo's "data/..." prefix,
+    # so data_root must point AT that data/ subfolder to match local's "./data"
+    # (which directly contains raw/processed/synthetic_forgeries) — found this
+    # mismatch (data_root pointed at the dataset root instead) before the first
+    # real Kaggle push, since sft_train.py builds sub-paths as
+    # data_root / "processed" / ... the same way for both environments.
+    data_root: "/kaggle/input/doc-verification-data/data"
     output_root: "/kaggle/working/results"
     checkpoint_root: "/kaggle/working/checkpoints"
 

@@ -54,7 +54,8 @@ _processor = None
 _loaded_model_name = None
 
 
-def _get_model(model_name: str, device: str = "cpu", cache_dir: str | None = None):
+def _get_model(model_name: str, device: str = "cpu", cache_dir: str | None = None,
+               load_in_4bit: bool | None = None):
     global _model, _processor, _loaded_model_name
     if _model is None or _loaded_model_name != model_name:
         logger.info(f"Loading {model_name} on {device} (first call downloads/loads weights, can take a while)")
@@ -66,9 +67,28 @@ def _get_model(model_name: str, device: str = "cpu", cache_dir: str | None = Non
         # still far faster than swapping to disk.
         dtype = torch.bfloat16
         _processor = AutoProcessor.from_pretrained(model_name, cache_dir=cache_dir)
-        _model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_name, torch_dtype=dtype, device_map=device, cache_dir=cache_dir,
-        )
+
+        # Default to 4-bit on CUDA: Qwen2.5-VL-7B in bf16 is ~14GB, which leaves
+        # almost no headroom on a T4's 16GB VRAM once activations/KV-cache/vision
+        # tokens are added (real OOM risk we'd rather not discover mid-run on
+        # borrowed GPU quota). This also keeps the zero-shot baseline's
+        # quantization level identical to the QLoRA fine-tuned model it's being
+        # compared against, so the comparison isolates the fine-tuning effect
+        # rather than conflating it with a precision change.
+        use_4bit = load_in_4bit if load_in_4bit is not None else (device == "cuda")
+        if use_4bit:
+            from transformers import BitsAndBytesConfig
+            quant_config = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
+            )
+            _model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                model_name, quantization_config=quant_config, device_map=device, cache_dir=cache_dir,
+            )
+        else:
+            _model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                model_name, torch_dtype=dtype, device_map=device, cache_dir=cache_dir,
+            )
         _loaded_model_name = model_name
     return _model, _processor
 
@@ -89,8 +109,8 @@ def _extract_json(raw_text: str) -> dict | None:
 
 def run_single(image_path: str, model_name: str, device: str = "cpu",
                 max_new_tokens: int = 300, max_image_size: int = 640,
-                cache_dir: str | None = None) -> dict:
-    model, processor = _get_model(model_name, device, cache_dir=cache_dir)
+                cache_dir: str | None = None, load_in_4bit: bool | None = None) -> dict:
+    model, processor = _get_model(model_name, device, cache_dir=cache_dir, load_in_4bit=load_in_4bit)
 
     image = Image.open(image_path).convert("RGB")
     image.thumbnail((max_image_size, max_image_size))  # CPU inference: keep vision-token count small
@@ -99,6 +119,11 @@ def run_single(image_path: str, model_name: str, device: str = "cpu",
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, video_inputs = process_vision_info(messages)
     inputs = processor(text=[text], images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
+    # processor() always builds tensors on CPU — device_map="cuda" puts the model
+    # (and, for 4-bit, the quantized weights) on GPU, so inputs must follow or
+    # generate() raises a device-mismatch error. Never hit locally since CPU-only
+    # runs have model and inputs on the same device by coincidence.
+    inputs = inputs.to(model.device)
 
     with torch.no_grad():
         generated = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
@@ -136,10 +161,12 @@ def build_eval_sample(genuine_manifest_path: str, tier1_manifest_path: str | Non
 def run(genuine_manifest_path: str, model_name: str = "Qwen/Qwen2.5-VL-3B-Instruct",
         tier1_manifest_path: str | None = None, tier2_manifest_path: str | None = None,
         n_per_category: int = 3, device: str = "cpu", out_path: str | None = None,
-        cache_dir: str | None = None) -> dict:
+        cache_dir: str | None = None, load_in_4bit: bool | None = None) -> dict:
     examples = build_eval_sample(genuine_manifest_path, tier1_manifest_path, tier2_manifest_path, n_per_category)
+    resolved_4bit = load_in_4bit if load_in_4bit is not None else (device == "cuda")
     logger.info(f"Evaluating {model_name} zero-shot on {len(examples)} images "
-                f"({n_per_category} per category) — this is a smoke-scale sample, not the full eval set")
+                f"({n_per_category} per category, 4bit={resolved_4bit}) — "
+                f"this is a smoke-scale sample, not the full eval set")
 
     per_field_similarity: dict[str, list[float]] = {f: [] for f in EXTRACTION_FIELDS}
     per_field_exact: dict[str, list[float]] = {f: [] for f in EXTRACTION_FIELDS}
@@ -149,7 +176,8 @@ def run(genuine_manifest_path: str, model_name: str = "Qwen/Qwen2.5-VL-3B-Instru
 
     for i, example in enumerate(examples):
         logger.info(f"[{i+1}/{len(examples)}] {example['image_path']} (true_label={example['true_label']})")
-        result = run_single(example["image_path"], model_name, device=device, cache_dir=cache_dir)
+        result = run_single(example["image_path"], model_name, device=device, cache_dir=cache_dir,
+                             load_in_4bit=load_in_4bit)
         parse_successes.append(float(result["parse_success"]))
 
         predicted_verdict = (result["parsed"] or {}).get("tamper_verdict") if result["parse_success"] else None
@@ -170,6 +198,7 @@ def run(genuine_manifest_path: str, model_name: str = "Qwen/Qwen2.5-VL-3B-Instru
     summary = {
         "model_name": model_name,
         "device": device,
+        "load_in_4bit": resolved_4bit,
         "n_examples": len(examples),
         "n_per_category": n_per_category,
         "parse_success_rate": bootstrap_ci(parse_successes),
@@ -247,6 +276,10 @@ def main() -> None:
     parser.add_argument("--n-per-category", type=int, default=3)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--cache-dir", default=None, help="Local HF snapshot dir, e.g. ./.hf_cache, to avoid re-downloading")
+    parser.add_argument("--4bit", dest="load_in_4bit", action="store_true", default=None,
+                         help="Force 4-bit loading regardless of device (default: on for cuda, off for cpu)")
+    parser.add_argument("--no-4bit", dest="load_in_4bit", action="store_false",
+                         help="Force full-precision loading even on cuda")
     parser.add_argument("--out", default="results/tables/clean_eval_baseline.json")
     parser.add_argument("--ocr-out", default="results/tables/ocr_baseline.json")
     parser.add_argument("--ocr-n-examples", type=int, default=10)
@@ -262,6 +295,7 @@ def main() -> None:
             device=args.device,
             out_path=args.out,
             cache_dir=args.cache_dir,
+            load_in_4bit=args.load_in_4bit,
         )
     if args.mode in ("ocr", "both"):
         run_ocr_baseline(

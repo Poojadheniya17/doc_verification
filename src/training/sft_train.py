@@ -206,6 +206,8 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
             example = self.examples[idx]
             return build_conversation(example["image_path"], example["target"])
 
+    max_image_size = model_config["model"]["max_image_size"]
+
     def collate(batch: list[list[dict]]):
         from qwen_vl_utils import process_vision_info
 
@@ -213,6 +215,17 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         image_inputs = []
         for conv in batch:
             imgs, _ = process_vision_info(conv)
+            # MIDV-2020 source images are full-resolution scans (~2167x1521) —
+            # feeding them in uncapped multiplies vision-token count (and thus
+            # activation memory) far beyond what a T4 has room for alongside
+            # the 4-bit base model. Found by hitting a genuine CUDA OOM 486MB
+            # into the very first training step (14.24/14.56GB already used).
+            # clean_eval.py already caps this for zero-shot inference
+            # (max_image_size=640) — training needs the same discipline, just
+            # using model_config.yaml's max_image_size instead of a hardcoded
+            # eval-only constant.
+            for img in imgs or []:
+                img.thumbnail((max_image_size, max_image_size))
             image_inputs.extend(imgs or [])
         inputs = processor(text=texts, images=image_inputs, padding=True, return_tensors="pt")
         inputs["labels"] = inputs["input_ids"].clone()
@@ -229,6 +242,13 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         save_strategy=sft_cfg["save_strategy"],
         logging_steps=sft_cfg["logging_steps"],
         bf16=True,
+        # Paged 8-bit Adam (bitsandbytes) instead of the Trainer default
+        # (regular fp32 AdamW): standard QLoRA practice specifically because it
+        # pages optimizer state to CPU under memory pressure rather than
+        # OOMing outright — cheap insurance on a T4 that's already tight with
+        # the 4-bit base model loaded, and the optimizer state itself is small
+        # regardless (only the 47.6M LoRA params are trainable).
+        optim="paged_adamw_8bit",
         # Gated on an actual WANDB_API_KEY being present, not just
         # environment == "kaggle" — found the hard way on the first real
         # Kaggle run: Trainer tried to wandb.init() with no key configured at

@@ -71,6 +71,23 @@ Public/synthetic only — **no real fraud data**. Base documents from MIDV-2020 
 equivalent public ID dataset); all forgeries are generated, not sourced. Clearly
 labeled throughout.
 
+Phase 2 acquired a real (partial-download, local-dev-scale) MIDV-2020 sample and
+ran Tier 1 (field tamper), Tier 2 (splicing), and the 5-kind degradation pipeline
+against it end to end. See [results/tables/phase2_data_summary.md](results/tables/phase2_data_summary.md)
+for exact counts, an example of a bug found and fixed mid-phase, and what scaling
+up to a full run requires.
+
+**Attribution:** MIDV-2020 (Bulatov et al., 2022, CC BY-SA 2.5) — synthetic faces
+via [Generated Photos](https://generated.photos/). Dataset files themselves are
+not committed to this repo (see `.gitignore`); `src/data_generation/acquire_dataset.py`
+re-downloads them from the official source.
+
+| Genuine | Tier 1: field tamper | Tier 2: splice (same code) | Tier 2: splice (cross code) |
+|---|---|---|---|
+| ![genuine](results/sample_outputs/example_genuine_lva_passport_00.jpg) | ![tier1](results/sample_outputs/example_tier1_field_tamper.jpg) | ![tier2 same](results/sample_outputs/example_tier2_splicing_samecode.jpg) | ![tier2 cross](results/sample_outputs/example_tier2_splicing_crosscode.jpg) |
+
+See [results/sample_outputs/README.md](results/sample_outputs/README.md) for captions.
+
 ## Non-goals (explicit scope cuts, not oversights)
 
 - No RL-based self-play forger — forgery generation is scripted/targeted (future
@@ -107,7 +124,7 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 | Phase | What | Status |
 |---|---|---|
 | 1 | Scaffold (folders, configs, requirements, README) | Done |
-| 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Not started |
+| 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Done |
 | 3 | Baselines (zero-shot VLM, OCR) | Not started |
 | 4 | Core SFT + QLoRA fine-tuning | Not started |
 | 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Not started |

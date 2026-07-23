@@ -1,5 +1,5 @@
 {
-  "id": "poojadheniya/doc-verification-tier3-inpainting",
+  "id": "poojadheniya/doc-verification-tier3-diffusion-inpainting",
   "title": "doc-verification tier3 diffusion inpainting",
   "code_file": "kernel_driver.py",
   "language": "python",

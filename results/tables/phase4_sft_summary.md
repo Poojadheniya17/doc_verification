@@ -114,3 +114,83 @@ belief that these are the right values for 3B long-term. Revisiting them
 upward — for better OCR legibility at higher resolution, or a higher LoRA
 rank now that there's VRAM to spare — is flagged here as a reasonable,
 clearly-labeled follow-up once a 3B baseline run has actually completed.
+
+## 3B training: the hang continues, then a new OOM chain (v14-v23)
+
+**v14-v18 — same silent-hang failure mode reappeared on 3B, across five more
+single-variable fixes:**
+
+| Kernel | Config | Result |
+|---|---|---|
+| v14 | 3B, checkpointing off (avoids the reentrant-checkpointing hypothesis entirely) | Hung at yet another point — ruled out checkpointing as sole cause |
+| v16 | 3B, `use_reentrant=False` + explicit `model.config.use_cache=False` set together (the exact combination later reconsidered for v23 — see below) | Hung again |
+| v17 | 3B, `device_map={"": 0}` | Crashed with a `RuntimeError` inside `torch.nn.DataParallel` — revealed this Kaggle instance has 2 visible GPUs, not 1 |
+| v18 | 3B, `CUDA_VISIBLE_DEVICES=0` set before any CUDA import (removes DataParallel auto-wrap entirely) | No more DataParallel crash, but still no completed run |
+
+Six single-variable hypotheses (v11-v18, spanning both model sizes) were each
+tested and ruled out in turn. The actual root cause of the original hang was
+never found. Per explicit user direction, this investigation was stopped —
+"we've spent significant time on the training hang... no more open-ended
+debugging loops" — in favor of a pragmatic workaround: disable gradient
+checkpointing entirely and manage memory through other levers instead.
+
+**v19-v22 — bounded image-size step-down search, checkpointing off. Every
+attempt OOM'd:**
+
+| Kernel | max_image_size | Result | Shortfall | Total GPU memory in use |
+|---|---|---|---|---|
+| v19 | 512px | OOM (MLP dequant) | ~44 MiB short | 14.55 GiB |
+| v20 | 384px | OOM (lm_head) | ~51 MiB short | 14.03 GiB |
+| v21 | 320px | OOM (lm_head) | ~163 MiB short | 14.14 GiB |
+| v22 | 256px (the floor — lower would make field-extraction meaningless) | OOM (loss/cross_entropy) | ~19 MiB short | 14.33 GiB |
+
+Memory usage was **not monotonic** with image size (14.55 -> 14.03 -> 14.14
+-> 14.33 GiB) — never explained, not investigated further per explicit user
+instruction ("we don't need to understand why, we just need this to work").
+
+**v23 — LoRA rank r=8->4 + `max_seq_length` 2048->1024, image size held at
+the 256px floor, checkpointing still off:**
+
+Before pushing v23, re-enabling checkpointing (the "untested gap" originally
+listed as option (a)) was reconsidered and correctly rejected: v16 (above)
+already ran the exact `use_reentrant=False` + explicit `use_cache=False`
+combination on 3B, and it hung. That combination is a known-bad configuration,
+not an untested one — an error in this document's earlier framing, caught
+before it led to wasted GPU time.
+
+Also found and fixed while implementing v23: `max_seq_length` in
+`training_config.yaml` had been a **decorative value only** since Phase 4's
+first kernel — `sft_train.py`'s `collate()` never actually passed it to the
+processor, so every kernel from v8 through v22 trained with the full
+untruncated sequence regardless of what the config said. Fixed by adding
+`truncation=True, max_length=max_seq_length` to the `processor(...)` call.
+
+Result: **OOM again.** `trainable params: 9,288,192 || all params:
+3,763,911,168 || trainable%: 0.2468` confirms the rank cut took effect.
+Crashed on the very first training step's backward pass:
+
+```
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 252.00 MiB.
+GPU 0 has a total capacity of 14.56 GiB of which 202.81 MiB is free.
+Including non-PyTorch memory, this process has 14.36 GiB memory in use.
+Of the allocated memory 14.03 GiB is allocated by PyTorch, and 193.47 MiB
+is reserved by PyTorch but unallocated.
+```
+
+Shortfall ~49 MiB — slightly **worse** than v22's ~19 MiB, and total memory
+in use (14.36 GiB) essentially unchanged from v22 (14.33 GiB) despite halving
+LoRA rank and halving max sequence length. Both new levers, genuinely wired
+in this time, moved the needle by less than noise.
+
+**Where this leaves things:** five bounded, well-reasoned attempts (v19-v23)
+across three different memory levers (image size, LoRA rank, sequence length)
+have now landed within ~50-160 MiB of the same ~14.3-14.5 GiB ceiling on this
+T4, every single time, with no clear trend as any one lever is cut further.
+Combined with the six earlier hang hypotheses (v11-v18) that also never
+converged on a root cause, this is a strong enough pattern to treat as a
+genuine stop-and-report point rather than another autonomous cut — per this
+project's own standing rule not to loop indefinitely on a resistant failure.
+The remaining options are no longer cheap, low-risk config tweaks; they are
+real structural decisions (a materially smaller/different base model, a
+paid Kaggle tier or different compute provider, or accepting a reduced
+training scope) that need the user's judgment, not another bounded search.

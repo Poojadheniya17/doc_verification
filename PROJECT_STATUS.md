@@ -1,8 +1,11 @@
 # Project Status — resume point for a fresh session
 
-Last updated: 2026-07-23. Phase 4's bounded step-down search (v19-v22)
-exhausted without success — stopped, reported to user, awaiting their
-direction on next steps. See "Where Phase 4 actually stands" below.
+Last updated: 2026-07-23 (v23). Phase 4 has now had 5 straight OOM'ing
+attempts (v19-v23) across three different memory levers (image size, LoRA
+rank, sequence length), plus 6 earlier unresolved hang hypotheses (v11-v18).
+Stopped, reported to user with full honest numbers, awaiting their direction
+— this is now a genuine structural decision, not another cheap config tweak.
+See "Where Phase 4 actually stands" below.
 
 **If you are a fresh Claude session picking this up:** read this whole file
 first, then check `git log --oneline -10` and the Kaggle kernel status
@@ -45,45 +48,67 @@ DECISION comment and `results/tables/phase4_sft_summary.md`. Final decision:
 gradient checkpointing disabled entirely + `max_image_size` cut to 512 for
 real OOM margin (v15's approach, hardened). This was pushed as v19.
 
-**BOUNDED STEP-DOWN SEARCH EXHAUSTED (2026-07-23): v19-v22, all 4 OOM'd,
-floor reached without success.** After v19's confusing OOM (memory usage
-went UP despite a smaller image, never fully explained), the user explicitly
-said not to investigate why and instead run a bounded brute-force search:
-cut `max_image_size` in steps until training succeeds or a 256px floor is
-hit. Full result table:
+**BOUNDED STEP-DOWN SEARCH, THEN v23's COMBINED LEVERS — ALL 5 OOM'D
+(2026-07-23).** After v19's confusing OOM (memory usage went UP despite a
+smaller image, never fully explained), the user explicitly said not to
+investigate why and instead run a bounded brute-force search: cut
+`max_image_size` in steps until training succeeds or a 256px floor is hit.
+That search (v19-v22) exhausted without success, so the user then directed
+two more levers combined for v23: LoRA rank r=8→r=4, and `max_seq_length`
+2048→1024 (the latter previously a **decorative config value only** — found
+and fixed while implementing v23: `sft_train.py`'s `collate()` never
+actually passed it to the processor, so v8-v22 all trained on the full
+untruncated sequence regardless of what the config said). Full result table:
 
-| Kernel | max_image_size | Result | Shortfall | Total GPU memory in use |
+| Kernel | Change | Result | Shortfall | Total GPU memory in use |
 |---|---|---|---|---|
-| v19 | 512px | OOM (MLP dequant) | ~44 MiB short | 14.55 GiB |
-| v20 | 384px | OOM (lm_head) | ~51 MiB short | 14.03 GiB |
-| v21 | 320px | OOM (lm_head) | ~163 MiB short | 14.14 GiB |
-| v22 | 256px | OOM (loss/cross_entropy) | ~19 MiB short | 14.33 GiB |
+| v19 | max_image_size 512px | OOM (MLP dequant) | ~44 MiB short | 14.55 GiB |
+| v20 | max_image_size 384px | OOM (lm_head) | ~51 MiB short | 14.03 GiB |
+| v21 | max_image_size 320px | OOM (lm_head) | ~163 MiB short | 14.14 GiB |
+| v22 | max_image_size 256px (floor) | OOM (loss/cross_entropy) | ~19 MiB short | 14.33 GiB |
+| v23 | + LoRA r=4, max_seq_length=1024 (genuinely wired in) | OOM (first backward pass) | ~49 MiB short | 14.36 GiB |
 
-**Every single attempt OOM'd.** Memory usage was NOT monotonic with image
-size (14.55 → 14.03 → 14.14 → 14.33 GiB) — confusing, never explained, not
+**Every single attempt OOM'd, including v23.** v23 confirmed the rank cut
+took effect (`trainable params: 9,288,192 || all params: 3,763,911,168 ||
+trainable%: 0.2468`) but total memory in use barely moved from v22 (14.36 vs
+14.33 GiB) and the shortfall was slightly *worse* (~49 MiB vs ~19 MiB), not
+better. Two genuinely different, correctly-implemented memory levers moved
+the needle by less than noise. Memory usage has never been monotonic with
+any of these levers across the whole v19-v23 search — never explained, not
 investigated further per the user's explicit instruction ("we don't need to
-understand why, we just need this to work"). The crash point also drifted
-later into the computation graph as size dropped (MLP → lm_head → lm_head →
-loss computation), consistent with less memory pressure overall, but never
-quite enough to clear the whole forward+loss pass.
+understand why, we just need this to work").
 
-**This is now a genuine stop-and-report point, per the user's own
-discipline.** Do NOT push a 5th attempt below 256px — that floor was chosen
-because lower would make field-extraction accuracy meaningless. Options laid
-out to the user (their call, not picked autonomously):
-(a) Re-enable gradient checkpointing now that `use_reentrant=False` +
-    explicit `use_cache=False` are BOTH in place simultaneously — this exact
-    combination was only ever tested on 7B (kernel v13/v16), never re-tried
-    on 3B after the model swap (v14 used checkpointing off in a different
-    combination). Real, untested gap in the search space.
-(b) Reduce LoRA rank further (r=8→r=4) — not yet tried in this search.
-(c) Reduce `max_seq_length` in `training_config.yaml` (currently 2048) — not
-    yet tried.
+**Re-enabling gradient checkpointing was considered for v23 and correctly
+rejected before pushing** — not because it was untested (an earlier version
+of this document wrongly claimed that), but because kernel v16 already ran
+the exact `use_reentrant=False` + explicit `use_cache=False` combination on
+3B (confirmed via `git log`: v16's commit came after the 3B model-swap
+commit) and it hung. That's a known-bad configuration, not an untested gap.
+
+**This is now a genuine stop-and-report point — five bounded attempts across
+three independent memory levers (image size, LoRA rank, sequence length),
+on top of six earlier unresolved hang hypotheses (v11-v18), all failing to
+close a ~50-160 MiB gap on a ~14.3-14.5 GiB ceiling.** Do NOT push a further
+cheap-lever attempt (e.g. LoRA r=2, which would likely make the adapter too
+low-capacity to learn anything useful, or seq length below 1024, which risks
+truncating real training targets). Remaining options, laid out for the user
+(their call, not picked autonomously):
+(a) ~~Re-enable gradient checkpointing~~ — ruled out, already tested on 3B
+    (v16) and hung. Not viable.
+(b) ~~Reduce LoRA rank further~~ — tried in v23 (r=4), didn't meaningfully
+    help; r=2 would risk an adapter too small to learn the task.
+(c) ~~Reduce `max_seq_length` further~~ — tried in v23 (1024), didn't
+    meaningfully help; further cuts risk truncating real training examples.
 (d) Batch/accumulation math — `per_device_train_batch_size` already at the
     floor of 1, so low expected value, but mentioned for completeness.
-(e) Something structural — reconsider whether this Kaggle free-tier T4 can
-    support this training at the desired quality bar at all, vs. a paid
-    tier or a fundamentally different approach.
+(e) Something structural — a materially smaller base model (e.g. a 1-2B VLM
+    if one exists with adequate document-understanding capability), a paid
+    Kaggle tier or different compute provider with more VRAM, or accepting
+    and clearly documenting a reduced training scope (e.g. fewer target
+    modules in the LoRA config, a shorter training set, or reporting Phase 4
+    as a documented infrastructure-limited negative result alongside the
+    honest debugging story — which the user has already said is some of the
+    strongest material in this project).
 
 **Immediate next step when resuming:** re-read the conversation for the
 user's direction on which option (if any) to pursue. Do not assume a fix and

@@ -1,6 +1,8 @@
 # Project Status — resume point for a fresh session
 
-Last updated: 2026-07-23, mid Phase 4 (v19 push in progress).
+Last updated: 2026-07-23. Phase 4's bounded step-down search (v19-v22)
+exhausted without success — stopped, reported to user, awaiting their
+direction on next steps. See "Where Phase 4 actually stands" below.
 
 **If you are a fresh Claude session picking this up:** read this whole file
 first, then check `git log --oneline -10` and the Kaggle kernel status
@@ -43,32 +45,49 @@ DECISION comment and `results/tables/phase4_sft_summary.md`. Final decision:
 gradient checkpointing disabled entirely + `max_image_size` cut to 512 for
 real OOM margin (v15's approach, hardened). This was pushed as v19.
 
-**v19 RESULT (2026-07-23): ERROR — a new, confusing OOM, not the hang.**
-`torch.OutOfMemoryError: Tried to allocate 44.00 MiB ... of which 8.81 MiB is
-free ... 14.55 GiB memory in use.` Crashed inside an MLP dequantize+matmul
-(bitsandbytes), step 0, 4 seconds in — NOT a repeat of the hang signature.
+**BOUNDED STEP-DOWN SEARCH EXHAUSTED (2026-07-23): v19-v22, all 4 OOM'd,
+floor reached without success.** After v19's confusing OOM (memory usage
+went UP despite a smaller image, never fully explained), the user explicitly
+said not to investigate why and instead run a bounded brute-force search:
+cut `max_image_size` in steps until training succeeds or a 256px floor is
+hit. Full result table:
 
-**The confusing part:** v15 (768px images, no version pins) used 14.02 GiB
-and was short by ~40MiB. v19 (512px images — nearly half the pixel area,
-should need LESS memory) used 14.55 GiB — **~530MB MORE**, despite the
-image-size cut. That's backwards from what the change should have done.
+| Kernel | max_image_size | Result | Shortfall | Total GPU memory in use |
+|---|---|---|---|---|
+| v19 | 512px | OOM (MLP dequant) | ~44 MiB short | 14.55 GiB |
+| v20 | 384px | OOM (lm_head) | ~51 MiB short | 14.03 GiB |
+| v21 | 320px | OOM (lm_head) | ~163 MiB short | 14.14 GiB |
+| v22 | 256px | OOM (loss/cross_entropy) | ~19 MiB short | 14.33 GiB |
 
-**Working hypothesis, NOT verified — flagged to the user, no fix pushed yet
-per their explicit instruction for this exact situation:** v19 is the first
-run using the library versions pinned in v17/v18 (transformers==4.57.6,
-bitsandbytes==0.49.2, etc.) — v15 ran before those pins existed, on whatever
-unpinned "latest" resolved to at the time. It's plausible the pin itself
-increased baseline memory overhead (e.g. a different default attention
-implementation, or more scratch memory in the 4-bit dequantization path)
-enough to swamp the image-size savings. This needs the user's input on how
-to proceed (test the version-overhead hypothesis specifically vs. just
-cutting image size further vs. something else) — DO NOT push another
-autonomous kernel version without checking with the user first, per their
-explicit instruction given after v19's diagnosis.
+**Every single attempt OOM'd.** Memory usage was NOT monotonic with image
+size (14.55 → 14.03 → 14.14 → 14.33 GiB) — confusing, never explained, not
+investigated further per the user's explicit instruction ("we don't need to
+understand why, we just need this to work"). The crash point also drifted
+later into the computation graph as size dropped (MLP → lm_head → lm_head →
+loss computation), consistent with less memory pressure overall, but never
+quite enough to clear the whole forward+loss pass.
 
-**Immediate next step when resuming (if the user hasn't yet responded to
-this finding):** re-read the conversation for the user's direction on v19's
-OOM before doing anything else. Do not assume a fix and push it.
+**This is now a genuine stop-and-report point, per the user's own
+discipline.** Do NOT push a 5th attempt below 256px — that floor was chosen
+because lower would make field-extraction accuracy meaningless. Options laid
+out to the user (their call, not picked autonomously):
+(a) Re-enable gradient checkpointing now that `use_reentrant=False` +
+    explicit `use_cache=False` are BOTH in place simultaneously — this exact
+    combination was only ever tested on 7B (kernel v13/v16), never re-tried
+    on 3B after the model swap (v14 used checkpointing off in a different
+    combination). Real, untested gap in the search space.
+(b) Reduce LoRA rank further (r=8→r=4) — not yet tried in this search.
+(c) Reduce `max_seq_length` in `training_config.yaml` (currently 2048) — not
+    yet tried.
+(d) Batch/accumulation math — `per_device_train_batch_size` already at the
+    floor of 1, so low expected value, but mentioned for completeness.
+(e) Something structural — reconsider whether this Kaggle free-tier T4 can
+    support this training at the desired quality bar at all, vs. a paid
+    tier or a fundamentally different approach.
+
+**Immediate next step when resuming:** re-read the conversation for the
+user's direction on which option (if any) to pursue. Do not assume a fix and
+push it — this needs their actual decision.
 
 Once Phase 4 genuinely reaches a completed run (whenever that happens):
 ```bash
@@ -80,13 +99,9 @@ Once Phase 4 genuinely reaches a completed run (whenever that happens):
   This is the actual trained model everything downstream depends on —
   **download and commit it locally** (adapter checkpoints are small, LoRA-only,
   a few tens of MB) before it's lost when the Kaggle session recycles.
-- If `ERROR`: diagnose from `kaggle_run_output`'s log. If it's the SAME hang
-  signature yet again even with checkpointing off, that would be a genuinely
-  new and confusing result worth stopping and reporting to the user rather
-  than guessing further (per the user's own stated discipline: a few
-  isolated attempts, then stop and report, no indefinite loops). If it's an
-  OOM still short by some margin, a further `max_image_size` cut (already at
-  512, next step down would be ~384-448) is a reasonable single next lever.
+- If `ERROR`: diagnose from `kaggle_run_output`'s log. Note: `kernels status`
+  can lag the true state — always check the log tail for `[NbConvertApp]
+  Writing` as the definitive end-of-run marker, don't trust status alone.
 - If `RUNNING`: use the stall-detection pattern established throughout this
   session — poll every ~4 min, compare live log snapshots, escalate to the
   user only on a confirmed stall (10+ min identical) or a genuinely new

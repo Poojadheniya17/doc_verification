@@ -13,6 +13,7 @@ import json
 import random
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 from PIL import Image
@@ -23,8 +24,15 @@ from src.data_generation.field_tamper import _mutate_digits
 from src.data_generation.inpaint_forger import build_inpaint_mask
 from src.data_generation.recapture_sim import simulate_recapture
 from src.data_generation.synthetic_id_gen import _random_date, _random_id_number, _random_name, generate_synthetic_id
+from src.decision.cost_simulator import compute_cost, sweep_thresholds
+from src.decision.risk_tiering import route
+from src.eval.adversarial_rounds import build_accuracy_curve, mine_failures
+from src.eval.adversarial_rounds import run as run_adversarial_rounds
 from src.eval.clean_eval import _extract_json, build_eval_sample
+from src.eval.leave_one_out_eval import aggregate_fold_results, build_folds, load_tier_examples
+from src.eval.leave_one_out_eval import run as run_leave_one_out
 from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
+from src.retrieval.case_index import build_index, case_text, load_index, save_index
 from src.training.checkpoint_utils import latest_checkpoint
 from src.training.sft_train import _apply_tier1_field_overrides, build_conversation, build_sft_examples
 from src.utils.image_utils import unique_stem
@@ -406,3 +414,272 @@ def test_build_genuine_manifest_stratifies_by_document_code(tmp_path):
     for code in ("code_a", "code_b"):
         splits = {e["split"] for e in manifest["entries"] if e["document_code"] == code}
         assert "train" in splits  # every code must appear in train given these ratios
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: leave_one_out_eval.py
+# ---------------------------------------------------------------------------
+
+def test_load_tier_examples_filters_successes(tmp_path):
+    manifest = {"entries": [
+        {"success": True, "forged_image": "a.jpg"},
+        {"success": False, "forged_image": "b.jpg"},
+        {"success": True, "forged_image": "c.jpg"},
+    ]}
+    path = tmp_path / "tier1.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    examples = load_tier_examples(str(path), "tier1_field_tamper")
+    assert [e["image_path"] for e in examples] == ["a.jpg", "c.jpg"]
+    assert all(e["tier"] == "tier1_field_tamper" and e["true_label"] == "tampered" for e in examples)
+
+
+def test_build_folds_creates_one_fold_per_tier_with_others_as_train():
+    tier_examples = {
+        "tier1": [{"image_path": "a.jpg"}],
+        "tier2": [{"image_path": "b.jpg"}, {"image_path": "c.jpg"}],
+        "tier4": [{"image_path": "d.jpg"}],
+    }
+    folds = build_folds(tier_examples)
+    assert {f["held_out_tier"] for f in folds} == {"tier1", "tier2", "tier4"}
+
+    tier2_fold = next(f for f in folds if f["held_out_tier"] == "tier2")
+    assert set(tier2_fold["train_tiers"]) == {"tier1", "tier4"}
+    assert len(tier2_fold["held_out_examples"]) == 2
+
+
+def test_build_folds_skips_tier_with_no_others_to_train_on():
+    # Only one tier present -> nothing to train on that excludes it -> no fold
+    folds = build_folds({"tier1": [{"image_path": "a.jpg"}]})
+    assert folds == []
+
+
+def test_aggregate_fold_results_reports_per_tier_and_overall():
+    per_fold_scores = {"tier1": [1.0, 1.0, 0.0], "tier2": [0.0, 0.0]}
+    results = aggregate_fold_results(per_fold_scores, n_resamples=100)
+    assert results["per_tier"]["tier1"]["n"] == 3
+    assert results["per_tier"]["tier2"]["n"] == 2
+    assert results["overall"]["n"] == 5  # pooled across both tiers
+    assert results["per_tier"]["tier1"]["mean"] > results["per_tier"]["tier2"]["mean"]
+
+
+def _write_leave_one_out_config(tmp_path) -> Path:
+    config = {
+        "leave_one_out": {
+            "tiers": ["tier1_field_tamper", "tier2_splicing", "tier3_inpainting",
+                      "tier4_full_synthetic", "tier5_recapture"],
+            "bootstrap_resamples": 100,
+            "confidence_level": 0.95,
+        },
+    }
+    path = tmp_path / "training_config.yaml"
+    path.write_text(yaml.dump(config), encoding="utf-8")
+    return path
+
+
+def _write_tier_manifest(tmp_path, name: str, n_success: int) -> Path:
+    manifest = {"entries": [{"success": True, "forged_image": f"{name}_{i}.jpg"} for i in range(n_success)]}
+    path = tmp_path / f"{name}.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def test_run_leave_one_out_stops_without_callables(tmp_path):
+    config_path = _write_leave_one_out_config(tmp_path)
+    tier1_path = _write_tier_manifest(tmp_path, "tier1_field_tamper", 3)
+    tier2_path = _write_tier_manifest(tmp_path, "tier2_splicing", 2)
+
+    result = run_leave_one_out(
+        str(config_path),
+        {"tier1_field_tamper": str(tier1_path), "tier2_splicing": str(tier2_path)},
+    )
+    assert result["results"] is None
+    assert len(result["folds"]) == 2  # logged the 3 missing configured tiers, still built folds for what's present
+
+
+def test_run_leave_one_out_orchestrates_with_fake_callables(tmp_path):
+    config_path = _write_leave_one_out_config(tmp_path)
+    tier1_path = _write_tier_manifest(tmp_path, "tier1_field_tamper", 4)
+    tier2_path = _write_tier_manifest(tmp_path, "tier2_splicing", 4)
+    tier4_path = _write_tier_manifest(tmp_path, "tier4_full_synthetic", 4)
+    out_path = tmp_path / "loo_results.json"
+
+    trained_on = []
+
+    def fake_train_fn(train_tiers):
+        trained_on.append(sorted(train_tiers))
+        return "fake-model"
+
+    def fake_eval_fn(model_handle, held_out_examples):
+        assert model_handle == "fake-model"
+        return [1.0] * len(held_out_examples)  # perfect "generalization" for this fake model
+
+    result = run_leave_one_out(
+        str(config_path),
+        {"tier1_field_tamper": str(tier1_path), "tier2_splicing": str(tier2_path),
+         "tier4_full_synthetic": str(tier4_path)},
+        train_fn=fake_train_fn, eval_fn=fake_eval_fn, out_path=str(out_path),
+    )
+
+    assert len(trained_on) == 3  # one training call per fold
+    assert result["results"]["overall"]["mean"] == 1.0
+    for tier_result in result["results"]["per_tier"].values():
+        assert tier_result["mean"] == 1.0
+    assert out_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: adversarial_rounds.py
+# ---------------------------------------------------------------------------
+
+def test_mine_failures_caps_and_filters_incorrect():
+    eval_results = [
+        {"image_path": "a.jpg", "correct": True},
+        {"image_path": "b.jpg", "correct": False},
+        {"image_path": "c.jpg", "correct": False},
+        {"image_path": "d.jpg", "correct": False},
+    ]
+    failures = mine_failures(eval_results, cap=2)
+    assert [f["image_path"] for f in failures] == ["b.jpg", "c.jpg"]  # first 2 failures, order preserved
+
+
+def test_build_accuracy_curve_tags_rounds_in_order():
+    curve = build_accuracy_curve([[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]], n_resamples=100)
+    assert [point["round"] for point in curve] == [0, 1, 2]
+    assert [point["mean"] for point in curve] == [0.0, 0.5, 1.0]
+
+
+def _write_adversarial_config(tmp_path, num_rounds=3, cap=200) -> Path:
+    config = {"adversarial_rounds": {"num_rounds": num_rounds, "failure_sample_cap": cap, "confidence_level": 0.95}}
+    path = tmp_path / "training_config.yaml"
+    path.write_text(yaml.dump(config), encoding="utf-8")
+    return path
+
+
+def test_run_adversarial_rounds_stops_without_callables(tmp_path):
+    config_path = _write_adversarial_config(tmp_path)
+    result = run_adversarial_rounds(str(config_path), eval_set=[{"image_path": "a.jpg"}])
+    assert result["rounds"] is None
+
+
+def test_run_adversarial_rounds_orchestrates_and_improves(tmp_path):
+    config_path = _write_adversarial_config(tmp_path, num_rounds=3, cap=5)
+    eval_set = [{"image_path": f"{i}.jpg"} for i in range(10)]
+    out_path = tmp_path / "adv_results.json"
+
+    # Fake model that "improves" each round: round r gets the first r*3 examples right.
+    def fake_train_fn(failures, round_num):
+        return round_num
+
+    def fake_eval_fn(round_num, eval_set):
+        return [{"image_path": ex["image_path"], "correct": i < round_num * 3}
+                for i, ex in enumerate(eval_set)]
+
+    result = run_adversarial_rounds(str(config_path), eval_set, train_fn=fake_train_fn, eval_fn=fake_eval_fn,
+                                     out_path=str(out_path))
+
+    assert len(result["rounds"]) == 3
+    accuracies = [r["accuracy"]["mean"] for r in result["rounds"]]
+    assert accuracies == sorted(accuracies)  # monotonically improving, matching the fake model
+    assert len(result["accuracy_curve"]) == 3
+    assert out_path.is_file()
+    # Round 0 (round_num=0 -> 0 correct) mines min(cap, 10) = 5 failures
+    assert result["rounds"][0]["num_failures_mined"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: risk_tiering.py / cost_simulator.py
+# ---------------------------------------------------------------------------
+
+_COST_CONFIG = {
+    "costs": {
+        "false_accept": {"value": 500},
+        "false_reject": {"value": 50},
+        "manual_review": {"value": 5},
+    },
+    "thresholds": {"auto_approve_min_confidence": 0.9, "auto_reject_max_confidence": 0.1},
+    "threshold_sweep": {
+        "auto_approve_candidates": [0.95, 0.9, 0.8],
+        "auto_reject_candidates": [0.2, 0.1, 0.05],
+    },
+}
+
+
+def test_route_boundaries():
+    assert route(0.95, _COST_CONFIG) == "auto_approve"
+    assert route(0.9, _COST_CONFIG) == "auto_approve"  # boundary is inclusive
+    assert route(0.05, _COST_CONFIG) == "auto_reject"
+    assert route(0.1, _COST_CONFIG) == "auto_reject"  # boundary is inclusive
+    assert route(0.5, _COST_CONFIG) == "human_review"
+
+
+def test_route_rejects_out_of_range_confidence():
+    with pytest.raises(ValueError):
+        route(1.5, _COST_CONFIG)
+
+
+def test_compute_cost_counts_false_accept_false_reject_and_review():
+    eval_results = [
+        {"confidence": 0.95, "true_label": "tampered"},   # auto_approve, WRONG -> false accept ($500)
+        {"confidence": 0.05, "true_label": "genuine"},     # auto_reject, WRONG -> false reject ($50)
+        {"confidence": 0.5, "true_label": "genuine"},      # human_review ($5)
+        {"confidence": 0.95, "true_label": "genuine"},     # auto_approve, correct -> $0
+    ]
+    result = compute_cost(eval_results, _COST_CONFIG["thresholds"], _COST_CONFIG)
+    assert result["counts"]["false_accept"] == 1
+    assert result["counts"]["false_reject"] == 1
+    assert result["counts"]["human_review"] == 1
+    assert result["total_cost"] == 500 + 50 + 5
+    assert result["avg_cost_per_doc"] == pytest.approx((500 + 50 + 5) / 4)
+
+
+def test_sweep_thresholds_finds_best_and_skips_invalid_pairs():
+    eval_results = [{"confidence": c, "true_label": label} for c, label in [
+        (0.99, "genuine"), (0.02, "tampered"), (0.5, "genuine"), (0.5, "tampered"),
+    ]]
+    swept = sweep_thresholds(eval_results, _COST_CONFIG)
+    # 3x3 grid, minus pairs where reject >= approve (none here since candidates are disjoint ranges)
+    assert len(swept["curve"]) == 9
+    assert swept["best"]["avg_cost_per_doc"] == min(c["avg_cost_per_doc"] for c in swept["curve"])
+    for combo in swept["curve"]:
+        assert combo["thresholds"]["auto_reject_max_confidence"] < combo["thresholds"]["auto_approve_min_confidence"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6/8: case_index.py (pure logic + save/load roundtrip only — build_index
+# and query need a real sentence-transformers model download, excluded from
+# this fast suite per the same reasoning as field_tamper.py's EasyOCR path;
+# verified manually instead, see results/tables/phase6_7_groundwork_summary.md)
+# ---------------------------------------------------------------------------
+
+def test_case_text_combines_available_fields():
+    case = {"document_code": "lva_passport", "tamper_verdict": "tampered", "tier": "tier1_field_tamper",
+            "explanation": "DOB field font mismatch"}
+    text = case_text(case)
+    assert "lva_passport" in text
+    assert "tampered" in text
+    assert "tier1_field_tamper" in text
+    assert "DOB field font mismatch" in text
+
+
+def test_case_text_falls_back_to_case_id_when_no_other_fields():
+    assert case_text({"case_id": "case-42"}) == "case-42"
+
+
+def test_save_and_load_index_roundtrip(tmp_path):
+    # Fabricated embeddings (no real model call) — keeps this test fast; the
+    # embedding step itself is verified manually (module docstring).
+    index = {
+        "model_name": "all-MiniLM-L6-v2",
+        "cases": [{"case_id": "c0", "explanation": "font mismatch"}, {"case_id": "c1", "explanation": "splice"}],
+        "embeddings": np.array([[1.0, 0.0], [0.0, 1.0]], dtype="float32"),
+    }
+    out_path = tmp_path / "index"
+    save_index(index, str(out_path))
+    assert out_path.with_suffix(".npz").is_file()
+    assert out_path.with_suffix(".json").is_file()
+
+    loaded = load_index(str(out_path))
+    assert loaded["model_name"] == "all-MiniLM-L6-v2"
+    assert loaded["cases"] == index["cases"]
+    assert np.allclose(loaded["embeddings"], index["embeddings"])

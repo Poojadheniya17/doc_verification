@@ -34,3 +34,13 @@ thresholds:
   auto_approve_min_confidence: 0.95
   auto_reject_max_confidence: 0.05
   # anything between the two thresholds routes to human review by default
+
+# Grid searched by src/decision/cost_simulator.py's sweep_thresholds() to find
+# the empirically cost-minimizing thresholds against a real eval set, rather
+# than trusting the `thresholds` starting guess above. Kept coarse (6x6=36
+# valid combos, fewer once approve<=reject pairs are dropped) since it's
+# evaluated against a small local eval sample; refine if a real large eval
+# set justifies a finer grid.
+threshold_sweep:
+  auto_approve_candidates: [0.99, 0.95, 0.90, 0.85, 0.80, 0.70]
+  auto_reject_candidates: [0.01, 0.05, 0.10, 0.15, 0.20, 0.30]

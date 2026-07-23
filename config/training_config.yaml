@@ -31,9 +31,12 @@ paths:
     checkpoint_root: "/kaggle/working/checkpoints"
 
 sft:
-  # Batch size 1 + grad accumulation 16 (effective batch 16) is what fits a 7B QLoRA
-  # forward/backward pass on a T4's 16GB VRAM with 1280px images. Do not raise
-  # per-device batch size without re-checking VRAM headroom on Kaggle first.
+  # Batch size 1 + grad accumulation 16 (effective batch 16). Real Kaggle runs
+  # (kernel v8-v10) found even this OOMs a T4's 16GB VRAM at max_image_size
+  # 1280 in the backward pass — see model_config.yaml's max_image_size/lora.r
+  # comments for the full progression. Do not raise per-device batch size
+  # without re-checking VRAM headroom on Kaggle first; there's currently zero
+  # slack.
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 16
   learning_rate: 2.0e-4

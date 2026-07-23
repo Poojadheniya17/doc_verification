@@ -143,9 +143,9 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 | 3 | Baselines (zero-shot VLM, OCR) | OCR done; VLM eval built + tested, real numbers deferred to Kaggle |
 | 4 | Core SFT + QLoRA fine-tuning | Script + data pipeline built and tested; training run itself deferred to Kaggle |
 | 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Tier 4/5 done; Tier 3 mask logic done, diffusion inference deferred to Kaggle |
-| 6 | Core experiments (leave-one-out, adversarial rounds) | Not started |
-| 7 | Decision layer (risk tiering, cost simulation) | Not started |
-| 8 | DPO + retrieval | Not started |
+| 6 | Core experiments (leave-one-out, adversarial rounds) | Orchestration/aggregation logic built + tested; real per-fold/per-round training deferred to Kaggle |
+| 7 | Decision layer (risk tiering, cost simulation) | Done — fully real (no model involved), see [results/tables/phase6_7_groundwork_summary.md](results/tables/phase6_7_groundwork_summary.md) |
+| 8 | DPO + retrieval | Retrieval (case_index.py) done, real end-to-end verified locally; DPO not started |
 | 9 | Quantization benchmarking | Not started |
 | 10 | Layer 3 (optional) | Not started |
 | 11 | Demo + writeup | Not started |

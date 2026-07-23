@@ -26,11 +26,21 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 # Trainer does, so this is precautionary rather than a known-necessary fix.
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+# NOT pinning exact versions here (unlike the Phase 3/4 kernel's deliberate
+# hard pins) — found the hard way on the first push: diffusers==0.31.0 pinned
+# against whatever transformers Kaggle's base image ships crashed with
+# "cannot import name 'FLAX_WEIGHTS_NAME' from 'transformers.utils'", a real
+# version mismatch between the two packages, not a Qwen2.5-VL-style
+# compatibility cliff. Letting pip's own resolver pick mutually-compatible
+# versions is the right tool for *this* specific failure mode; the installed
+# version is printed below so the run stays reproducible/debuggable.
 subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q",
-     "diffusers==0.31.0", "accelerate==1.14.0", "safetensors"],
+    [sys.executable, "-m", "pip", "install", "-q", "-U",
+     "diffusers", "accelerate", "safetensors"],
     check=True,
 )
+import diffusers  # noqa: E402
+print(f"=== diffusers version actually installed: {diffusers.__version__} ===", flush=True)
 
 candidates = [
     Path("/kaggle/input/doc-verification-data"),

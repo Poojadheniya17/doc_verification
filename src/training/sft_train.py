@@ -171,22 +171,33 @@ def load_model_for_training(model_config: dict):
         model_cfg["name"], quantization_config=bnb_config, device_map={"": 0},
         trust_remote_code=model_cfg["trust_remote_code"],
     )
-    # v15 (gradient checkpointing disabled entirely) ruled itself out: it hit a
-    # clean, immediate CUDA OOM in the forward pass (594MB short) instead of a
-    # hang — checkpointing's memory savings are load-bearing even at 3B, so
-    # that diagnostic couldn't run long enough to test anything about the hang.
+    # FINAL DECISION on gradient checkpointing, after v11-v18 (six single-variable
+    # hypotheses, each ruled out in turn: num_workers, checkpointing's
+    # reentrant/non-reentrant mode, checkpointing on/off, model size 7B->3B,
+    # explicit use_cache, device_map/GPU-visibility): checkpointing DISABLED
+    # entirely. None of those six changes resolved the hang; each one narrowed
+    # the search space without finding the actual cause, and the failure point
+    # kept moving rather than converging on an explanation. Continuing to guess
+    # at a seventh hypothesis was judged not worth further Kaggle time.
     #
-    # Next hypothesis: every single hung run's log shows "`use_cache=True` is
-    # incompatible with gradient checkpointing. Setting `use_cache=False`" —
-    # printed by HF's internal auto-correction, immediately before freezing in
-    # every case. That auto-correction was never verified to actually land
-    # before the forward pass runs; setting it explicitly, ourselves, ahead of
-    # time removes any timing dependency on when/whether the internal fixup
-    # actually applies. Cheap, targeted, and testable in isolation: checkpointing
-    # goes back to v13's setting (use_reentrant=False) — only this one thing
-    # is new.
+    # v15 (the one prior run with checkpointing off) hit a real, ordinary,
+    # arithmetic-explainable CUDA OOM instead of a hang (594MiB requested,
+    # 554.81MiB free — short by ~40MiB) — proof checkpointing-off avoids the
+    # hang entirely, it just needs a real memory margin, which
+    # model_config.yaml's max_image_size cut (768->512) now provides. use_cache
+    # is still set explicitly (harmless, good practice) even though it turned
+    # out not to be the hang's cause.
+    #
+    # Real, honest cost of this decision: checkpointing trades memory for
+    # recompute, so disabling it means training is faster per step but has
+    # zero slack for anything that increases activation memory later
+    # (larger images, higher LoRA rank, bigger batch) without hitting the OOM
+    # margin recovered here. That's a real constraint on this project's
+    # trained model, not a footnote — documented in README.md and
+    # results/tables/phase4_sft_summary.md alongside the image-size cut's
+    # accuracy tradeoff.
     model.config.use_cache = False
-    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     lora_cfg = model_config["lora"]
     peft_config = LoraConfig(

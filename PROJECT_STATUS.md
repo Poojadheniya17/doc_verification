@@ -1,11 +1,12 @@
 # Project Status — resume point for a fresh session
 
-Last updated: 2026-07-23 (v23). Phase 4 has now had 5 straight OOM'ing
-attempts (v19-v23) across three different memory levers (image size, LoRA
-rank, sequence length), plus 6 earlier unresolved hang hypotheses (v11-v18).
-Stopped, reported to user with full honest numbers, awaiting their direction
-— this is now a genuine structural decision, not another cheap config tweak.
-See "Where Phase 4 actually stands" below.
+Last updated: 2026-07-23 (v24). **Phase 4 SFT training completed successfully
+for the first time.** Root cause of the entire v19-v23 OOM chain: Phase 3's
+7B model was never freed before Phase 4 loaded the 3B model (clean_eval.py
+caches its model at module scope; kernel_driver.py never cleared it), so
+every "memory cut" from v19-v23 was shrinking the wrong side of the ledger.
+Fixed in v24 by adding explicit cleanup between phases — see "Where Phase 4
+actually stands" below for the full story and real training numbers.
 
 **If you are a fresh Claude session picking this up:** read this whole file
 first, then check `git log --oneline -10` and the Kaggle kernel status
@@ -110,27 +111,85 @@ truncating real training targets). Remaining options, laid out for the user
     honest debugging story — which the user has already said is some of the
     strongest material in this project).
 
-**Immediate next step when resuming:** re-read the conversation for the
-user's direction on which option (if any) to pursue. Do not assume a fix and
-push it — this needs their actual decision.
+**BEFORE the structural decision was made, the user asked one more question
+that changed everything: was Phase 3's 7B model actually being freed before
+Phase 4 loaded the 3B model, given both run in the same kernel process?**
 
-Once Phase 4 genuinely reaches a completed run (whenever that happens):
-```bash
-"/c/Users/Acer/AppData/Roaming/Python/Python314/Scripts/kaggle.exe" kernels status poojadheniya/doc-verification-zero-shot-baseline-sft-qlora
+It was not. `kernel_driver.py` calls `run_clean_eval(...)` (Phase 3) then
+`run_sft_train(...)` (Phase 4) back-to-back with zero cleanup between them —
+no `del`, no `torch.cuda.empty_cache()`, no `gc.collect()`. Worse:
+`clean_eval.py` caches its model/processor at **module scope**
+(`_model`/`_processor` globals, added originally so Phase 3's own loop
+wouldn't reload weights per image) — since `kernel_driver.py` keeps that
+module imported for the rest of the process, the 7B model's reference never
+went away. This fully explains why v19-v23's three independent memory cuts
+(image size, LoRA rank, sequence length) barely moved the OOM ceiling: none
+of them addressed the actual problem. The ceiling was leftover 7B weights,
+not 3B training's own footprint.
+
+**v24 — fix: explicit cleanup between phases, v23's training settings
+otherwise unchanged.** Added `clean_eval.unload_model()` (clears the cached
+globals, `gc.collect()`, `torch.cuda.empty_cache()`), called from
+`kernel_driver.py` between Phase 3 and Phase 4, with real before/after GPU
+memory diagnostic prints so the result would be verified, not assumed.
+
+**Diagnostic confirmed the hypothesis exactly:**
 ```
-- If `COMPLETE`: download output (`kernels output ... -p kaggle_run_output`),
-  check `/kaggle/working/results/` and `/kaggle/working/checkpoints/` in the
-  downloaded output for the real loss curve and final adapter checkpoint.
-  This is the actual trained model everything downstream depends on —
-  **download and commit it locally** (adapter checkpoints are small, LoRA-only,
-  a few tens of MB) before it's lost when the Kaggle session recycles.
-- If `ERROR`: diagnose from `kaggle_run_output`'s log. Note: `kernels status`
-  can lag the true state — always check the log tail for `[NbConvertApp]
-  Writing` as the definitive end-of-run marker, don't trust status alone.
-- If `RUNNING`: use the stall-detection pattern established throughout this
-  session — poll every ~4 min, compare live log snapshots, escalate to the
-  user only on a confirmed stall (10+ min identical) or a genuinely new
-  failure mode.
+=== GPU memory before Phase 3 cleanup: 5.91 GB allocated, 7.29 GB reserved ===
+=== GPU memory after Phase 3 cleanup: 0.01 GB allocated, 0.03 GB reserved ===
+```
+~7.3 GB of the ~14.5 GB budget was leftover 7B model, on every single one of
+v19-v23's attempts.
+
+**PHASE 4 TRAINING COMPLETED SUCCESSFULLY (2026-07-23, kernel v24, Kaggle
+kernel version 6).** 135/135 steps, all 3 epochs, no crash:
+```
+{'train_runtime': 7998.9749, 'train_samples_per_second': 0.27,
+ 'train_steps_per_second': 0.017, 'train_loss': 1.7295982360839843, 'epoch': 3.0}
+```
+- Total training wall-clock: **7999 seconds ≈ 2h 13m** (matches the progress
+  bar's 135/135 steps at ~58-60s/step).
+- `train_loss` (the Trainer's running average over the *entire* run,
+  including the high-loss early steps) = **1.7296**.
+- The loss trajectory itself (from the log, `{'loss': ..., 'epoch': ...}`
+  lines): 5.03 (0.22) → 3.12 (0.45) → 1.76 (0.67) → 1.41 (0.89) → 1.31 (1.11)
+  → 1.29 (1.33) → 1.28 (1.56) → 1.27 (1.78) → 1.26 (2.00) → 1.25 (2.22) →
+  1.25 (2.45) → 1.25 (2.67) → 1.26 (2.89). Loss dropped fast in epoch 1, then
+  plateaued around 1.25-1.26 for the rest of training — worth flagging
+  honestly in the writeup as a sign the model may be near its capacity given
+  LoRA r=4 and 719 training examples, not necessarily evidence of a
+  problem, but not obviously still improving either.
+- `[NbConvertApp] Writing 301965 bytes` confirms the definitive completion
+  marker.
+- `trainable params: 9,288,192 || all params: 3,763,911,168 || trainable%: 0.2468`
+  confirms the LoRA r=4 config was actually applied.
+
+**Checkpoint location:** downloaded to
+`C:\Users\Acer\OneDrive\Desktop\hyperVerge\kaggle_run_output_v24\checkpoints\sft\`
+— `checkpoint-45/`, `checkpoint-90/`, `checkpoint-135/` (each ~55MB, includes
+optimizer/scheduler/rng state for potential resume) and `final/` (36MB,
+adapter weights only — this is the one downstream phases should load).
+**Not committed into the git repo** — `.gitignore` already has a deliberate,
+pre-existing rule (`checkpoints/ # large binaries — track via Kaggle output
+/ external storage, not git`) that predates this session. Respected that
+convention rather than overriding it silently; the checkpoint is safe on
+disk (OneDrive-synced) and also remains in this Kaggle kernel version's
+output for now. **Flag to the user:** the adapter is only 36MB, well under
+GitHub's 100MB file limit, so committing it is a real option if you'd
+rather have it versioned in git for portfolio completeness — just say so.
+
+**What's now unblocked** (previously blocked on a real trained checkpoint):
+Tier 3 diffusion inpainting can proceed independently; wiring the real
+checkpoint into `leave_one_out_eval.py`/`adversarial_rounds.py`;
+`financial_risk_reasoning.py`; quantization benchmarking; the Streamlit demo;
+the results notebook; the paper-style writeup (which must include this
+entire saga — v8-v24, hangs then OOMs then the memory-leak fix — as the
+honest debugging story, per the user's standing instruction).
+
+**Immediate next step when resuming:** confirm with the user whether to
+proceed into the next phases (Tier 3, leave-one-out, decision layer, etc.)
+and whether to commit the checkpoint into git. Do not assume either without
+asking — this was flagged as a genuine milestone worth a pause.
 
 ## What's authorized for autonomous continuation (per user's explicit direction)
 

@@ -194,3 +194,81 @@ The remaining options are no longer cheap, low-risk config tweaks; they are
 real structural decisions (a materially smaller/different base model, a
 paid Kaggle tier or different compute provider, or accepting a reduced
 training scope) that need the user's judgment, not another bounded search.
+
+## v24: the real root cause, and the first completed training run
+
+Before committing to a structural decision, the user asked one more targeted
+question: was Phase 3's 7B model actually being freed before Phase 4 loaded
+the 3B model, given `kaggle_kernels/phase3_4_sft_baseline/kernel_driver.py`
+runs both in the same process? It was not — and worse than a simple
+oversight: `src/eval/clean_eval.py` caches its model/processor at **module
+scope** (`_model`/`_processor` globals, originally added so Phase 3's own
+per-image loop wouldn't reload weights). Since `kernel_driver.py` keeps that
+module imported for the rest of the process, the 7B model's reference never
+went away after Phase 3 finished. This fully explains v19-v23's mystery:
+three independently well-reasoned memory cuts to the 3B training (image
+size, LoRA rank, sequence length) barely moved the OOM ceiling because none
+of them touched the actual problem — the ceiling was leftover 7B weights,
+not 3B training's own footprint.
+
+**Fix (v24):** added `clean_eval.unload_model()` (clears the cached globals,
+`gc.collect()`, `torch.cuda.empty_cache()`), called from `kernel_driver.py`
+between phases, with real before/after GPU memory diagnostic prints so the
+result would be verified rather than assumed. v23's training settings (LoRA
+r=4, `max_seq_length=1024`, `max_image_size=256`, checkpointing off) were
+otherwise unchanged — a single targeted test of one new hypothesis.
+
+**The diagnostic confirmed it exactly:**
+
+```
+=== GPU memory before Phase 3 cleanup: 5.91 GB allocated, 7.29 GB reserved ===
+=== GPU memory after Phase 3 cleanup: 0.01 GB allocated, 0.03 GB reserved ===
+```
+
+~7.3 GB of the ~14.5 GB budget was leftover 7B model on every one of
+v19-v23's attempts — a real, root-caused, confirmed explanation, not a
+guess.
+
+**Result: Phase 4 SFT training completed successfully — the first
+completed training run in this entire project.** 135/135 steps, all 3
+epochs, no crash:
+
+```
+{'train_runtime': 7998.9749, 'train_samples_per_second': 0.27,
+ 'train_steps_per_second': 0.017, 'train_loss': 1.7295982360839843, 'epoch': 3.0}
+```
+
+- Total training wall-clock: 7999 seconds (~2h 13m).
+- `train_loss` (Trainer's running average over the whole run, including the
+  high-loss early steps) = 1.7296.
+- Loss trajectory (from the log): 5.03 (epoch 0.22) → 3.12 (0.45) → 1.76
+  (0.67) → 1.41 (0.89) → 1.31 (1.11) → 1.29 (1.33) → 1.28 (1.56) → 1.27
+  (1.78) → 1.26 (2.00) → 1.25 (2.22) → 1.25 (2.45) → 1.25 (2.67) → 1.26
+  (2.89). Fast drop in epoch 1, then a plateau around 1.25-1.26 for the
+  remaining two epochs — an honest flag for the writeup: this could mean the
+  model reached its effective capacity given LoRA r=4 and 719 training
+  examples, not necessarily a red flag, but not clearly still improving
+  either. Worth checking against real eval numbers once
+  `leave_one_out_eval.py`/`clean_eval.py` are run against this checkpoint.
+- `trainable params: 9,288,192 || all params: 3,763,911,168 || trainable%:
+  0.2468` confirms the LoRA r=4 configuration was genuinely applied.
+
+**Checkpoint:** saved to
+`C:\Users\Acer\OneDrive\Desktop\hyperVerge\kaggle_run_output_v24\checkpoints\sft\`
+— `checkpoint-45/`, `checkpoint-90/`, `checkpoint-135/` (~55MB each, include
+optimizer/scheduler state) and `final/` (36MB, adapter weights only — the
+one for downstream use). Not committed into git per the repo's existing
+`.gitignore` convention (checkpoints tracked outside git deliberately,
+predating this session) — flagged to the user as a real option to revisit
+since 36MB is well under GitHub's 100MB file limit.
+
+**The honest throughline for the writeup:** eleven kernel pushes (v14-v24)
+across two different failure modes — six single-variable hang hypotheses
+that never converged on a root cause (v11-v18, unresolved, documented as
+such), followed by five OOM attempts that all shrank the wrong variable
+(v19-v23) — were only resolved once the user asked a question about process
+lifecycle and cross-phase state that no amount of config-level cutting could
+have found. That is worth stating plainly in the final paper: the fix was
+not a bigger model, more VRAM, or a cleverer LoRA config — it was a basic
+resource-management bug (a cached global reference outliving its scope)
+that had nothing to do with any of the levers being tuned.

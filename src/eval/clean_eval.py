@@ -104,6 +104,30 @@ def _get_model(model_name: str, device: str = "cpu", cache_dir: str | None = Non
     return _model, _processor
 
 
+def unload_model() -> None:
+    """Release the module-level cached model/processor and free GPU memory.
+
+    _get_model() caches _model/_processor at module scope so repeated
+    run_single() calls within one run() don't reload weights — but that means
+    the reference stays alive for the rest of the process, not just for the
+    duration of run(). Found while investigating why three independent memory
+    cuts to Phase 4's 3B training (image size, LoRA rank, max_seq_length,
+    kernels v19-v23) barely moved the OOM ceiling: kernel_driver.py runs Phase
+    3 (this module, loads 7B) and Phase 4 (sft_train.py, loads 3B) in the same
+    process with no cleanup between them, so the 7B model was plausibly still
+    resident on the GPU throughout every Phase 4 attempt. Call this after
+    Phase 3 and before Phase 4 loads its own model.
+    """
+    global _model, _processor, _loaded_model_name
+    _model = None
+    _processor = None
+    _loaded_model_name = None
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _extract_json(raw_text: str) -> dict | None:
     """Zero-shot models often wrap JSON in markdown fences or add preamble text —
     pull out the first {...} block rather than requiring the whole response to

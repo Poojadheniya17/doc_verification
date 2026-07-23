@@ -124,7 +124,7 @@ print(f"=== cwd = {os.getcwd()} ===", flush=True)
 
 import yaml  # noqa: E402
 
-from src.eval.clean_eval import run as run_clean_eval  # noqa: E402
+from src.eval.clean_eval import run as run_clean_eval, unload_model as unload_clean_eval_model  # noqa: E402
 from src.training.sft_train import train as run_sft_train  # noqa: E402
 
 # training_config.yaml's kaggle.data_root is a static string baked in when the
@@ -160,6 +160,22 @@ run_clean_eval(
     load_in_4bit=True,
     out_path="/kaggle/working/results/clean_eval_baseline_7b.json",
 )
+
+# v19-v23 all OOM'd on Phase 4's 3B training with a ceiling that barely moved
+# despite three independent memory cuts (image size, LoRA rank, max_seq_length)
+# — suspected cause: clean_eval.py caches its model at module scope (see
+# unload_model()'s docstring), so the 7B model from Phase 3 was plausibly
+# still resident on the GPU for all of Phase 4. Printing real before/after
+# numbers here rather than assuming the fix worked, given this project's
+# history of memory behavior that didn't match expectations.
+import torch  # noqa: E402
+print(f"=== GPU memory before Phase 3 cleanup: "
+      f"{torch.cuda.memory_allocated() / 1e9:.2f} GB allocated, "
+      f"{torch.cuda.memory_reserved() / 1e9:.2f} GB reserved ===", flush=True)
+unload_clean_eval_model()
+print(f"=== GPU memory after Phase 3 cleanup: "
+      f"{torch.cuda.memory_allocated() / 1e9:.2f} GB allocated, "
+      f"{torch.cuda.memory_reserved() / 1e9:.2f} GB reserved ===", flush=True)
 
 # Read directly rather than hardcoding the model name in the print below —
 # model_config.yaml's SFT target changed from 7B to 3B after the 7B hang saga

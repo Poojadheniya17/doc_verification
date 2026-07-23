@@ -30,6 +30,21 @@ from pathlib import Path
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
+# v17 (device_map={"":0}) crashed with a RuntimeError inside
+# torch.nn.DataParallel's parallel_apply — direct evidence this Kaggle
+# instance has 2 visible GPUs (a "T4 x2" instance), not the single T4 every
+# run through v17 implicitly assumed. transformers' Trainer auto-wraps the
+# model in nn.DataParallel whenever torch.cuda.device_count() > 1; it skips
+# that wrapping when it detects an existing accelerate multi-device map,
+# which device_map="auto" (v8-v16) produced but device_map={"":0} (v17,
+# a trivial single-device map) apparently didn't count as one — so v17
+# uniquely hit this. Restricting CUDA_VISIBLE_DEVICES to "0" here, before
+# any CUDA-touching import, makes torch.cuda.device_count() report 1
+# regardless of device_map's value, removing DataParallel from
+# consideration entirely rather than depending on Trainer's internal
+# detection logic.
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 # Kaggle's base image doesn't have a new enough transformers for Qwen2.5-VL,
 # or qwen_vl_utils at all.
 #

@@ -64,27 +64,28 @@ model:
   revision: "main"
   trust_remote_code: true
   torch_dtype: "bfloat16"           # compute dtype; base weights loaded in 4-bit (see quantization block)
-  # FINAL VALUE: 512 (down from 768). After six single-variable hypotheses
-  # (v11-v18) each failed to resolve a silent training hang without ever
-  # touching this value, the decision was made to stop debugging the hang
-  # and fall back to gradient checkpointing DISABLED (see sft_train.py's
-  # load_model_for_training) — the one configuration change that reliably
-  # avoids the hang, at the cost of needing real activation-memory margin
-  # instead. v15 (checkpointing off, this same 3B model, but still at 768px)
-  # hit a genuine, ordinary CUDA OOM short by only ~40MiB — a narrow miss,
-  # not a structural wall. 512px (roughly 44% of 768's pixel area, so a
-  # comparably large cut to vision-token count and activation memory) was
-  # chosen to close that gap with real margin rather than the minimum
-  # possible cut, specifically to avoid yet another narrow-miss iteration on
-  # a debugging effort that had already consumed significant time.
+  # v19 (512px, checkpointing off) hit a real CUDA OOM (44MiB short) that ran
+  # backward from expectation: MORE total memory in use than v15 (768px, no
+  # library-version pins), despite the smaller images. Working hypothesis
+  # (never confirmed, and deliberately NOT investigated further — user's
+  # explicit call: "we don't need to understand why, we just need this to
+  # work") is that pinning exact library versions (v17/v18) changed something
+  # memory-relevant (e.g. a different default attention implementation)
+  # enough to swamp the image-size savings. Rather than chase that down,
+  # the chosen path is a bounded brute-force size reduction: step down in
+  # ~64-96px increments (this repo's actual value at any given time reflects
+  # the current attempt — check results/tables/phase4_sft_summary.md for the
+  # full v19+ attempt history) until training succeeds or a 256px floor is
+  # hit, below which field-extraction accuracy would be too degraded to be
+  # meaningful and the approach needs a real rethink instead of another cut.
   #
-  # Honest quality cost, not hidden: 512px is a real, likely-noticeable hit to
-  # OCR legibility for dense printed ID text (small MRZ lines, fine print)
-  # versus 768px. This is a deliberate tradeoff — training completing
-  # reliably beats a marginally sharper image the training can't reliably
-  # run on — but it is a real cost to extraction accuracy that the clean-eval
-  # numbers must be read in light of, not a free change.
-  max_image_size: 512               # px, longer side — balances OCR legibility vs vision-token budget
+  # Honest quality cost, not hidden: every step down here is a real,
+  # increasing hit to OCR legibility for dense printed ID text (small MRZ
+  # lines, fine print). This is a deliberate tradeoff — training completing
+  # reliably beats a sharper image the training can't reliably run on — but
+  # it is a real, non-free cost to extraction accuracy that the clean-eval
+  # numbers must be read in light of.
+  max_image_size: 384               # px, longer side — see comment above: v19+ bounded step-down from 512
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.

@@ -69,6 +69,22 @@ def run_inpainting(image_path: str, mask: np.ndarray, out_dir: str, prompt: str 
     result = pipe(prompt=prompt, image=image, mask_image=mask_image,
                   num_inference_steps=num_inference_steps, generator=generator).images[0]
 
+    # runwayml/stable-diffusion-inpainting's built-in safety checker replaces
+    # the output with an all-black image on a (frequently false-positive, per
+    # the diffusers project's own known behavior) NSFW flag — found for real
+    # on this project's first Kaggle run: 1/15 source images (a face-region
+    # inpaint, the exact kind of content this safety checker is prone to
+    # over-triggering on) came back as a genuinely blank frame despite the
+    # prompt being an entirely benign "professional passport-style photo".
+    # Detected and rejected here (real success rate reported honestly) rather
+    # than disabling the safety checker outright, which would trade a
+    # legitimate safety mechanism for convenience on what's ultimately a rare
+    # failure mode with a simple check.
+    result_arr = np.asarray(result)
+    if result_arr.max() == 0:
+        return {"source_image": image_path, "success": False,
+                "reason": "SD safety checker returned an all-black image (likely a false-positive NSFW flag)"}
+
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     dest = out_path / f"{unique_stem(image_path)}_tier3.jpg"

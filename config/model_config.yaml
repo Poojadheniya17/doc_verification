@@ -85,7 +85,7 @@ model:
   # reliably beats a sharper image the training can't reliably run on — but
   # it is a real, non-free cost to extraction accuracy that the clean-eval
   # numbers must be read in light of.
-  max_image_size: 384               # px, longer side — see comment above: v19+ bounded step-down from 512
+  max_image_size: 320               # px, longer side — bounded step-down attempt 3/4 (512->384->320->256 floor); 384 OOM'd short by ~51MiB (594MiB needed, 542.81MiB free, 14.03GiB in use — down from v19's 14.55GiB, so the cut helped, just not enough yet)
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.

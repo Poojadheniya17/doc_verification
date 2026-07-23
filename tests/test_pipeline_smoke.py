@@ -39,7 +39,9 @@ from src.eval.quantization_bench import cost_per_million_verifications
 from src.eval.quantization_bench import run as run_quantization_bench
 from src.retrieval.case_index import build_index, case_text, load_index, save_index
 from src.training.checkpoint_utils import latest_checkpoint
-from src.training.sft_train import _apply_tier1_field_overrides, build_conversation, build_sft_examples
+from src.training.sft_train import DEFAULT_TIER_NAMES, _apply_tier1_field_overrides, _default_tier_manifest_paths
+from src.training.sft_train import build_conversation, build_sft_examples
+from src.utils.config_utils import load_yaml, resolve_paths
 from src.utils.image_utils import unique_stem
 from src.utils.kaggle_package import collect_referenced_paths, stage_package
 from src.utils.ocr_baseline import _DATE_RE
@@ -353,6 +355,28 @@ def test_build_sft_examples_from_fixture_manifests(tmp_path):
     # risk, just documented, honest behavior of a known data-generation gap.
     assert len(test_examples) == 2
     assert {e["tier"] for e in test_examples} == {"genuine", "tier4_full_synthetic"}
+
+
+def test_default_tier_manifest_paths_match_real_files_on_disk():
+    """Regression test for a real bug: _default_tier_manifest_paths() derived
+    each tier's manifest FILENAME from its full descriptive name (producing
+    e.g. "tier1_field_tamper_manifest.json"), but every tier's manifest is
+    actually named with just the short numeric prefix ("tier1_manifest.json"
+    — see field_tamper.py/splice.py/etc's own manifest-writing code).
+    build_sft_examples() silently skips any tier path that doesn't exist (by
+    design, for not-yet-generated tiers), so this bug produced ZERO tier
+    examples with no error at all — invisible locally, only surfacing when a
+    real Kaggle leave-one-out/adversarial-rounds run logged "0 folds" / "0
+    tampered examples" with no exception. Exercises the REAL repo data (not
+    fixtures) so a wrong filename convention actually fails this assertion.
+    """
+    training_config = load_yaml("config/training_config.yaml")
+    training_config["environment"] = "local"
+    paths = resolve_paths(training_config)
+    tier_paths = _default_tier_manifest_paths(paths, DEFAULT_TIER_NAMES)
+    assert tier_paths  # DEFAULT_TIER_NAMES is non-empty
+    for tier, path in tier_paths.items():
+        assert Path(path).is_file(), f"{tier}'s derived manifest path does not exist on disk: {path}"
 
 
 def test_build_conversation_structure():

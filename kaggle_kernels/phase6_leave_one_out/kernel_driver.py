@@ -77,7 +77,13 @@ ALL_TIERS = ["tier1_field_tamper", "tier2_splicing", "tier3_inpainting", "tier4_
 DATA_ROOT = INPUT_ROOT / "data"
 tier_manifest_paths = {}
 for tier in ALL_TIERS:
-    path = DATA_ROOT / "synthetic_forgeries" / tier / f"{tier}_manifest.json"
+    # Manifest FILES use just the short numeric prefix ("tier1_manifest.json"),
+    # not the full descriptive tier name used for the folder/tier key
+    # everywhere else — a real bug on the first run of this kernel derived
+    # the wrong filename here and silently found 0 tiers (see
+    # sft_train._default_tier_manifest_paths' docstring for the full story).
+    short = tier.split("_")[0]
+    path = DATA_ROOT / "synthetic_forgeries" / tier / f"{short}_manifest.json"
     if path.exists():
         tier_manifest_paths[tier] = str(path)
 print(f"=== Available tier manifests for leave-one-out: {sorted(tier_manifest_paths.keys())} ===", flush=True)

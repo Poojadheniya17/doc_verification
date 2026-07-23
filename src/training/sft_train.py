@@ -158,7 +158,17 @@ def load_model_for_training(model_config: dict):
         model_cfg["name"], quantization_config=bnb_config, device_map="auto",
         trust_remote_code=model_cfg["trust_remote_code"],
     )
-    model = prepare_model_for_kbit_training(model)
+    # use_reentrant=False, not PEFT's default (unset -> reentrant=True):
+    # kernel v11 and v12 (different image sizes, LoRA ranks, and optimizers)
+    # both hung — not crashed — at the identical backward-pass line, only
+    # after earlier OOM fixes stopped the process from running out of memory
+    # first. Reentrant checkpointing is a documented deadlock source
+    # specifically when a checkpointed region mixes frozen and trainable
+    # parameters, which is exactly QLoRA's shape (frozen base + trainable
+    # LoRA adapters) — and the warning recommending use_reentrant=False was
+    # printed, unaddressed, in every single run's log. This is a targeted fix
+    # for a named, evidenced cause, not another capacity cut.
+    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
 
     lora_cfg = model_config["lora"]
     peft_config = LoraConfig(

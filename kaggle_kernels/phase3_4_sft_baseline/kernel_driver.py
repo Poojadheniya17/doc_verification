@@ -130,8 +130,16 @@ run_clean_eval(
     out_path="/kaggle/working/results/clean_eval_baseline_7b.json",
 )
 
+# Read directly rather than hardcoding the model name in the print below —
+# model_config.yaml's SFT target changed from 7B to 3B after the 7B hang saga
+# (see model_config.yaml's DECISION comment); a hardcoded string here already
+# went stale once, silently claiming 7B in this print after the config moved
+# to 3B, until caught while making that exact change.
+with open(MODEL_CONFIG_PATH, encoding="utf-8") as f:
+    _sft_model_name = yaml.safe_load(f)["model"]["name"]
+
 print("=" * 70, flush=True)
-print("PHASE 4: SFT + QLoRA fine-tuning (Qwen2.5-VL-7B-Instruct)", flush=True)
+print(f"PHASE 4: SFT + QLoRA fine-tuning ({_sft_model_name})", flush=True)
 print("=" * 70, flush=True)
 run_sft_train(
     model_config_path=MODEL_CONFIG_PATH,

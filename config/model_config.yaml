@@ -1,35 +1,62 @@
 # Model + LoRA hyperparameters.
-# Rationale: Qwen2.5-VL-7B is the largest VLM that fits QLoRA 4-bit fine-tuning on a
-# single 16GB T4 (Kaggle's free tier) — bigger variants (32B/72B) would need multi-GPU
-# or paid compute, smaller VLMs (2B/3B class) sacrifice too much OCR/layout grounding
-# for dense ID-document text.
-
+#
+# DECISION (documented, not glossed over): the SFT training target is
+# Qwen2.5-VL-3B-Instruct, NOT the 7B variant used for the Phase 3 zero-shot
+# baseline. This is a deliberate pivot after extensive real-Kaggle debugging,
+# not an oversight or a silent scope cut. Full chain, in order:
+#
+#   1. 7B was the original target (rationale: largest VLM that should fit
+#      QLoRA 4-bit on a 16GB T4; bigger needs multi-GPU/paid compute, smaller
+#      2B/3B was assumed to sacrifice too much OCR/layout grounding for dense
+#      ID-document text — see results/tables/phase4_sft_summary.md for the
+#      full writeup of why that assumption turned out not to matter here).
+#   2. Kernels v8-v10: genuine CUDA OOM in the backward pass (486MB, then
+#      1.7GB short). Fixed correctly and confirmably: capped max_image_size
+#      (was uncapped), then PYTORCH_CUDA_ALLOC_CONF=expandable_segments,
+#      then reduced max_image_size/lora.r further (1280->896->768,
+#      r=16->12->8) — each fix visibly changed the OOM's exact shortfall,
+#      confirming they were real, working fixes for a real memory problem.
+#   3. Kernels v11-v13: once memory was no longer the constraint, training
+#      started silently HANGING instead of crashing — three different
+#      targeted fixes (paged optimizer swapped to non-paged adamw_bnb_8bit;
+#      then gradient_checkpointing_kwargs={"use_reentrant": False} for a
+#      documented reentrant-checkpointing deadlock class) each changed WHERE
+#      the hang occurred rather than resolving it. That shifting-failure-point
+#      pattern, not a single unlucky bug, is the actual evidence base for
+#      concluding this is a T4/library-stack compatibility issue at 7B scale
+#      in this environment — not something more config tuning was going to
+#      fix in reasonable time.
+#   4. Given (3), continuing to debug 7B further was judged not worth it.
+#      3B was selected as the SFT training target instead.
+#
+# CAVEAT this creates, stated plainly rather than buried: Phase 3's reported
+# zero-shot baseline (100% parse success, 88.9% tamper-verdict accuracy) is
+# for 7B — it succeeded and that number is being kept as-is. Comparing the 3B
+# fine-tune's results against that 7B zero-shot baseline conflates two
+# effects (fine-tuning gain AND a model-size difference) and is NOT a clean
+# ablation. Every place that comparison is reported (README, writeup) must
+# flag this explicitly, not present it as if 3B-vs-3B or 7B-vs-7B.
 model:
-  # This is the real target model — the one Phase 4+ fine-tunes and the one the
-  # reported baseline/final numbers are for. src/eval/clean_eval.py's
-  # --model-name defaults to the much lighter Qwen2.5-VL-3B-Instruct instead,
-  # purely so the zero-shot eval pipeline can be smoke-tested on local CPU;
-  # every result it writes is labeled with whichever model_name actually ran.
-  name: "Qwen/Qwen2.5-VL-7B-Instruct"
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"
   revision: "main"
   trust_remote_code: true
   torch_dtype: "bfloat16"           # compute dtype; base weights loaded in 4-bit (see quantization block)
-  # Dropped 1280->896->768 across three real Kaggle runs. v9/v10 (1280, then
-  # 896) OOM'd cleanly in the SFT backward pass by ~1.4-1.7GB. v11 (896 +
-  # lora.r=12, see below) didn't OOM at all this time — it silently STALLED at
-  # the exact same backward-pass line for 39 minutes with zero progress and no
-  # crash, most likely paged_adamw_8bit paging to host memory under pressure
-  # rather than erroring (see training_config.yaml's sft.optim comment: the
-  # optimizer itself was also changed, not just this value, in response).
-  # 768 + lora.r=8 is the most aggressive cut still expected to leave the
-  # model useful, applied together with dropping the paged optimizer so this
-  # targets the suspected root cause (paging under pressure) rather than only
-  # the symptom (footprint).
+  # These cuts (1280->896->768, see lora.r below for the matching rank cuts)
+  # were driven entirely by 7B's memory/hang debugging (see the DECISION note
+  # above) and are almost certainly more conservative than 3B actually needs
+  # — 3B's much smaller memory footprint likely has headroom to spare even at
+  # a larger image size. Deliberately NOT relaxed back up in this same change:
+  # the immediate goal is one clean completed training run on the new model
+  # with the fewest variables changed at once. Revisiting these upward for
+  # better OCR legibility is a reasonable, clearly-flagged follow-up once 3B
+  # has a working baseline run to compare against.
   max_image_size: 768               # px, longer side — balances OCR legibility vs vision-token budget
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.
-  # This is what makes 7B trainable on a T4's 16GB VRAM at all.
+  # Originally what made 7B trainable on a T4 at all; kept for 3B too even
+  # though 3B likely doesn't strictly need 4-bit to fit — consistent with the
+  # rest of this file, not re-tuned in the same change that swaps the model.
   load_in_4bit: true
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "bfloat16"

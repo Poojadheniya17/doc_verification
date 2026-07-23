@@ -39,7 +39,12 @@ before Layer 3 (optional) is attempted.
 
 ## Core technical approach
 
-- **Model:** Qwen2.5-VL-7B-Instruct, fine-tuned with QLoRA (4-bit)
+- **Model:** Qwen2.5-VL-3B-Instruct, fine-tuned with QLoRA (4-bit) — originally
+  targeted 7B; switched to 3B after real-Kaggle debugging surfaced an
+  unresolved T4/library-stack training issue at 7B scale. **The Phase 3
+  zero-shot baseline is still 7B and is kept as-is** — see
+  [Model size: 3B trained, 7B baseline](#model-size-3b-trained-7b-baseline-a-documented-decision)
+  below for the full reasoning and the comparison caveat this creates.
 - **Training:** SFT for extraction + tamper detection, then DPO for explanation
   quality (chosen vs. rejected reasoning pairs)
 - **Forgery generation:** 5 escalating tiers — field tampering, image splicing,
@@ -54,6 +59,44 @@ before Layer 3 (optional) is attempted.
   reasoned assumptions, clearly labeled) driving a threshold sweep and cost curve
 - **Production benchmarking:** fp16 vs. INT8 vs. INT4 — accuracy, latency, and
   estimated cost-per-verification at hypothetical volume
+
+## Model size: 3B trained, 7B baseline (a documented decision)
+
+The original plan (see `config/model_config.yaml`'s history) was to fine-tune
+Qwen2.5-VL-**7B** throughout — largest VLM expected to fit QLoRA 4-bit
+training on a 16GB T4 (Kaggle's free tier). That held up through the Phase 3
+zero-shot baseline, which ran successfully on 7B and whose numbers are kept
+as the reported baseline. It did not hold up for Phase 4 SFT training. The
+real debugging chain, in order:
+
+1. **Genuine OOM, fixed correctly (kernels v8-v10).** Backward-pass CUDA OOM,
+   486MB then 1.7GB short. Each fix (capping an uncapped image resize, then
+   `PYTORCH_CUDA_ALLOC_CONF=expandable_segments`, then reducing image
+   size/LoRA rank further) visibly changed the exact shortfall — confirming
+   these were real fixes for a real memory problem, not guesses.
+2. **Once memory stopped being the constraint, training started silently
+   hanging instead (kernels v11-v13).** Three different targeted fixes — a
+   non-paged optimizer (ruling out paged-optimizer CPU paging as the cause),
+   then `use_reentrant=False` on gradient checkpointing (targeting a
+   documented deadlock class specific to QLoRA's frozen+trainable parameter
+   mix) — each changed **where** the hang occurred rather than resolving it.
+3. **That shifting-failure-point pattern is the actual evidence**, not one
+   unlucky bug: three independent, well-reasoned fixes each addressing a
+   different plausible cause, each producing a different hang location, is a
+   stronger signal of a T4/library-stack compatibility issue in this specific
+   environment than of one more fixable bug one config tweak away.
+
+**Decision:** stop debugging 7B training and switch the SFT/DPO training
+target to Qwen2.5-VL-**3B**-Instruct. Full details and exact kernel-by-kernel
+numbers: [results/tables/phase4_sft_summary.md](results/tables/phase4_sft_summary.md).
+
+**The comparison caveat this creates, stated plainly:** Phase 3's reported
+zero-shot baseline (100% parse success, 88.9% tamper-verdict accuracy) is for
+**7B**. Every subsequent fine-tuned result is for **3B**. Comparing them
+conflates two effects — the fine-tuning gain, and a model-size difference —
+and is not a clean ablation. Anywhere these numbers are compared (this
+README, the results notebook, the final writeup), that conflation must be
+flagged explicitly, not presented as if it were a same-model before/after.
 
 ## Compute
 
@@ -141,7 +184,7 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 | 1 | Scaffold (folders, configs, requirements, README) | Done |
 | 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Done |
 | 3 | Baselines (zero-shot VLM, OCR) | OCR done; VLM eval built + tested, real numbers deferred to Kaggle |
-| 4 | Core SFT + QLoRA fine-tuning | Script + data pipeline built and tested; training run itself deferred to Kaggle |
+| 4 | Core SFT + QLoRA fine-tuning | In progress — 7B training hit an unresolved T4 hang after 3 targeted fixes (OOM resolved, then 2 hang variants); switched training target to 3B, see [Model size decision](#model-size-3b-trained-7b-baseline-a-documented-decision) |
 | 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Tier 4/5 done; Tier 3 mask logic done, diffusion inference deferred to Kaggle |
 | 6 | Core experiments (leave-one-out, adversarial rounds) | Orchestration/aggregation logic built + tested; real per-fold/per-round training deferred to Kaggle |
 | 7 | Decision layer (risk tiering, cost matrix, cost-tradeoff sim, financial risk reasoning) | Risk-tiering + cost sim done, fully real (no model involved); financial risk reasoning not started (needs the fine-tuned model) — see [results/tables/phase6_7_groundwork_summary.md](results/tables/phase6_7_groundwork_summary.md) |

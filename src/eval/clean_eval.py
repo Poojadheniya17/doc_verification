@@ -4,13 +4,24 @@ is degraded_eval.py's job; this script's axis is genuine-vs-forged and
 extraction accuracy). Zero-shot Qwen2.5-VL, no fine-tuning — establishes the
 "before" number that SFT (Phase 4) and DPO (Phase 8) are measured against.
 
-Model size note: the real reported baseline is Qwen2.5-VL-7B-Instruct (matching
-model_config.yaml, the fine-tuning target). `--model-name` defaults to the much
-lighter Qwen2.5-VL-3B-Instruct so a local run wouldn't need the full 7B — but in
-practice even 3B could not be loaded on the local dev machine (~7.7GB total RAM;
-loading 3B in fp32 caused severe disk thrashing, not just slowness — see the
-RAM-constraint note in README.md / training_config.yaml). run() and run_single()
-are therefore validated locally only via unit tests with mocked outputs
+Model size note: the reported Phase 3 baseline is Qwen2.5-VL-7B-Instruct,
+hardcoded explicitly in kaggle_kernels/phase3_4_sft_baseline/kernel_driver.py's
+Phase 3 call — it does NOT read model_config.yaml. This is now a deliberate
+mismatch, not an inconsistency to fix: model_config.yaml's fine-tuning target
+was moved to Qwen2.5-VL-3B-Instruct after 7B SFT training hit an unresolved
+T4/library-stack hang across three targeted fixes (see model_config.yaml's
+DECISION comment and results/tables/phase4_sft_summary.md for the full
+chain), while the 7B zero-shot baseline itself succeeded and is being kept
+as-is. Comparing the two is therefore an imperfect, model-size-confounded
+comparison — flag that explicitly anywhere the numbers are compared, don't
+present it as a clean before/after.
+
+`--model-name` defaults to the much lighter Qwen2.5-VL-3B-Instruct so a local
+run wouldn't need the full 7B — but in practice even 3B could not be loaded
+on the local dev machine (~7.7GB total RAM; loading 3B in fp32 caused severe
+disk thrashing, not just slowness — see the RAM-constraint note in
+README.md / training_config.yaml). run() and run_single() are therefore
+validated locally only via unit tests with mocked outputs
 (tests/test_pipeline_smoke.py: _extract_json, build_eval_sample) — actually
 executing this script against a real model (3B or 7B, any device) happens on
 Kaggle. Every result this script writes is labeled with the exact model_name and

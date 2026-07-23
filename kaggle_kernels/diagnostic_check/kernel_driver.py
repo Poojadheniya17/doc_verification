@@ -48,4 +48,25 @@ for tier in ALL_TIERS:
 checkpoint_path = INPUT_ROOT / "checkpoints" / "sft_v24_final" / "adapter_model.safetensors"
 print(f"=== checkpoint exists: {checkpoint_path.is_file()} ===", flush=True)
 
+print("=== Manifest path-separator check (backslash = broken on Linux) ===", flush=True)
+import json  # noqa: E402
+
+manifest_files = [
+    INPUT_ROOT / "data" / "processed" / "genuine_manifest_templates.json",
+] + [
+    INPUT_ROOT / "data" / "synthetic_forgeries" / tier / f"{tier.split('_')[0]}_manifest.json"
+    for tier in ALL_TIERS
+]
+path_keys = ("path", "source_image", "forged_image", "donor_face_image", "donor_image")
+total_backslash = 0
+for mf in manifest_files:
+    if not mf.is_file():
+        print(f"{mf}: MISSING", flush=True)
+        continue
+    d = json.loads(mf.read_text(encoding="utf-8"))
+    bad = sum(1 for e in d.get("entries", []) for k in path_keys if e.get(k) and "\\" in e[k])
+    total_backslash += bad
+    print(f"{mf.name}: {len(d.get('entries', []))} entries, backslash paths={bad}", flush=True)
+print(f"=== Total backslash path occurrences across all manifests: {total_backslash} (expect 0) ===", flush=True)
+
 print("Done.", flush=True)

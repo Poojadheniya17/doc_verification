@@ -158,23 +158,22 @@ def load_model_for_training(model_config: dict):
         model_cfg["name"], quantization_config=bnb_config, device_map="auto",
         trust_remote_code=model_cfg["trust_remote_code"],
     )
-    # Gradient checkpointing DISABLED entirely (use_gradient_checkpointing=False),
-    # not just its reentrant mode. Diagnostic test, not a final config choice:
-    # v11/v12 hung at the backward-pass entry line under reentrant checkpointing;
-    # v13 switched to use_reentrant=False and instead hung ~58 min *earlier*
-    # (before backward pass even started); v14 (3B, otherwise identical config)
-    # reproduced that exact same pre-backward freeze on a completely different
-    # model size. A hang that survives a model-size change is evidence the
-    # constant across every failure is something in the shared code path, not
-    # a per-model resource limit — and gradient checkpointing (in one mode or
-    # another) has been active and unchanged in every single failing run.
-    # dataloader_num_workers was checked first (confirmed 0 — the actual
-    # transformers default, never overridden in this codebase, so a
-    # multiprocessing-worker deadlock is ruled out, not just assumed absent)
-    # before reaching for this, costlier-in-memory, hypothesis. Costs more
-    # VRAM without checkpointing's recompute-instead-of-store tradeoff, but
-    # 3B's much smaller footprint (vs. 7B) should have headroom to spare.
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
+    # v15 (gradient checkpointing disabled entirely) ruled itself out: it hit a
+    # clean, immediate CUDA OOM in the forward pass (594MB short) instead of a
+    # hang — checkpointing's memory savings are load-bearing even at 3B, so
+    # that diagnostic couldn't run long enough to test anything about the hang.
+    #
+    # Next hypothesis: every single hung run's log shows "`use_cache=True` is
+    # incompatible with gradient checkpointing. Setting `use_cache=False`" —
+    # printed by HF's internal auto-correction, immediately before freezing in
+    # every case. That auto-correction was never verified to actually land
+    # before the forward pass runs; setting it explicitly, ourselves, ahead of
+    # time removes any timing dependency on when/whether the internal fixup
+    # actually applies. Cheap, targeted, and testable in isolation: checkpointing
+    # goes back to v13's setting (use_reentrant=False) — only this one thing
+    # is new.
+    model.config.use_cache = False
+    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
 
     lora_cfg = model_config["lora"]
     peft_config = LoraConfig(

@@ -193,26 +193,107 @@ asking — this was flagged as a genuine milestone worth a pause.
 
 ## What's authorized for autonomous continuation (per user's explicit direction)
 
-Once Phase 4 has a real completed training run and checkpoint:
-1. Tier 3 forgery generation (diffusion inpainting) — run for real on Kaggle
-   (`src/data_generation/inpaint_forger.py`'s `run_inpainting()`, not yet
-   executed anywhere; mask-building logic is done and tested locally)
-2. Wire the real trained checkpoint into `src/eval/leave_one_out_eval.py` and
-   `src/eval/adversarial_rounds.py` — run actual leave-one-out folds (use
-   judgment on 3 vs 5 tiers based on compute/time realities at that point;
-   document whichever is chosen as a deliberate, reasoned decision)
-3. `src/decision/financial_risk_reasoning.py` using the trained model (still
-   a stub — this is the one piece of Phase 7 not yet built)
-4. Quantization benchmarking (fp16/INT8/INT4) — `src/eval/quantization_bench.py`
-   (still a stub)
-5. Streamlit demo app — `app/demo_app.py` (still a stub)
-6. Results notebook with real charts — `notebooks/03_results_analysis.ipynb`
-7. Paper-style writeup — `writeup/project_report.md` (skeleton exists with
-   placeholder section markers). **Must include the real debugging story
-   honestly** — P100 incompatibility, the OOM chain, the six-hypothesis hang
-   investigation, the model-size and checkpointing tradeoffs — the user
-   explicitly called this out as some of the strongest material in the
-   project, not something to sanitize into a clean narrative.
+**UPDATE (2026-07-23, post-v24): Phase 4 completed, and the project moved into
+Phase 5/6/7/9 the same day.** Real status of each:
+
+1. **Tier 3 (diffusion inpainting) — DONE.** First Kaggle run silently
+   corrupted 1/15 images: `runwayml/stable-diffusion-inpainting`'s safety
+   checker replaced a face-region inpaint with an all-black frame on a
+   false-positive NSFW flag, but the manifest still said `success: true`.
+   Caught by literally opening the image and checking pixel stats (mean=0,
+   max=0). Fixed in `inpaint_forger.run_inpainting()`: detects an all-black
+   result and marks it a real failure with a stated reason, rather than
+   disabling the safety checker. Re-ran clean: **13/15 real successes**
+   (2 correctly rejected: `alb_id/10.jpg`, `alb_id/72.jpg`). Real data now in
+   `data/synthetic_forgeries/tier3_inpainting/` (not committed to git, like
+   every other tier — pushed via the Kaggle dataset only, see repo's
+   `.gitignore`). Tier 4 (full synthetic) and Tier 5 (recapture) turned out
+   to have ALREADY been generated in an earlier phase (15/15 each, no GPU
+   needed) — this was incorrectly believed to still be pending before a
+   codebase survey corrected it.
+
+2. **`sft_train.py` generalized to all 5 tiers.** `build_sft_examples()` now
+   takes an arbitrary `tier_manifest_paths: dict[str, str]` instead of
+   hardcoded tier1/tier2 params (each tier's manifest shape differs — see the
+   function's docstring). `train()` gained `tier_names`/`train_examples`
+   (bypass override)/`checkpoint_subdir`/`resume_from_adapter` params and now
+   *returns* the final checkpoint path — the injection points leave-one-out
+   (arbitrary tier subset per fold) and adversarial rounds (retrain resumed
+   from a prior adapter, on mined-failure examples only) both need.
+
+3. **New `src/eval/finetuned_eval.py`**: loads the REAL trained checkpoint
+   (base 3B + LoRA adapter — distinct from `clean_eval.py`, which is
+   zero-shot-7B-baseline-only) and evaluates it using `SFT_PROMPT` (the exact
+   schema it was fine-tuned on). Also computes a confidence signal:
+   `generate(..., output_scores=True)`'s average per-token probability,
+   mapped to P(genuine) via `generation_confidence_to_p_genuine()` — a
+   documented whole-response proxy, not a claim of true per-field
+   calibration.
+
+4. **Phase 7 decision layer — DONE.** `financial_risk_reasoning.py`'s
+   `explain_decision()` routes a scored document via `risk_tiering.route()`
+   and produces a written rationale combining the model's own
+   verdict/explanation, the dollar cost tradeoff behind that tier (from
+   `cost_matrix_config.yaml`), and optionally similar past cases from
+   `case_index.py` as supporting context (not a second vote).
+
+5. **Phase 9 quantization benchmarking — code DONE, not yet run.**
+   `quantization_bench.py` compares fp16/int8/int4 via the same load_fn/
+   eval_fn injection pattern as leave-one-out/adversarial rounds. Cost-per-
+   verification uses a labeled, stated GPU-cost assumption
+   (`ASSUMED_GPU_COST_PER_HOUR_USD = 0.35`) — the relative cost across
+   precisions is the real argument, not the absolute dollar figure.
+
+6. **Kaggle drivers built for leave-one-out and adversarial rounds**
+   (`kaggle_kernels/phase6_leave_one_out/`, `kaggle_kernels/
+   phase6_adversarial_rounds/`). User confirmed **5-tier** leave-one-out
+   (not 4) after being shown the real time estimate: ~11h05m total Kaggle
+   GPU time (5 folds × Phase 4's measured ~2h13m/fold), vs ~8h52m for 4
+   tiers — worth the extra ~2h13m since Tier 3 was being generated anyway.
+   Both drivers apply the v24-established discipline of explicit
+   `gc.collect()`+`torch.cuda.empty_cache()` after every model load, with
+   before/after GPU memory diagnostics printed, not assumed.
+
+7. **REAL BUG FOUND AND FIXED (2026-07-23): the Kaggle dataset's `data/`
+   folder was badly stale — only ~700-730 of the full 1000 raw MIDV-2020
+   images had ever been staged** (missing ~300, roughly the val+test splits
+   minus a handful used in Phase 3's smoke eval sample). This dataset was
+   set up once, early in the project, and every subsequent push in this
+   session only ever refreshed `config/`/`src/` — `data/` was never
+   wholesale-resynced. Silent until the adversarial-rounds kernel's first run
+   crashed on `FileNotFoundError: data/raw/.../alb_id/11.jpg` (a genuine
+   test-split image `build_eval_set()` legitimately needed but the dataset
+   never had). Fixed by wholesale `rm -rf` + `cp -r` of the entire local
+   `data/` folder into staging (verified byte-identical file listing before
+   pushing) rather than patching around the specific missing file — this
+   exact class of bug (a stale subset silently substituting for the real
+   thing) could have also broken leave-one-out folds (some tier1/2's source
+   images are val/test-split) or quantization benchmarking's eval set the
+   same way, so a full resync was the only real fix, not a one-off patch.
+   **Anyone resuming this session should verify the current dataset version
+   actually has all 1000 raw images before trusting any further Kaggle run**
+   (`kaggle datasets files poojadheniya/doc-verification-data`, count per
+   document-code subfolder).
+
+**Immediate next steps when resuming:**
+- Confirm the corrected dataset version (data/ fully synced) finished
+  processing (`kaggle datasets status ...` → "ready").
+- Re-push `phase6_adversarial_rounds` (its first run crashed partway through
+  round 0's eval on the missing-file bug above, no real results yet).
+- Push `phase6_leave_one_out` once Tier 3's real data is confirmed live in
+  the dataset (5 folds, ~11h — real session-length risk, see that kernel's
+  own docstring; per-fold results are written incrementally as a mitigation).
+- Once both produce real results: quantization benchmarking Kaggle driver
+  (not yet built — `quantization_bench.py`'s code is ready, needs a
+  `kaggle_kernels/phase9_quantization/` driver following the same pattern),
+  Streamlit demo app, results notebook, and the writeup.
+- **Writeup requirement, explicitly restated by the user:** the epoch 2-3
+  loss plateau seen in v24's training (loss stuck ~1.25-1.26 after a fast
+  drop in epoch 1) must be treated as a real finding, not a footnote — if
+  leave-one-out/adversarial-rounds eval results come back weak, the honest
+  hypothesis chain to flag is that LoRA rank 4 (cut for memory reasons, not
+  because r=4 was judged sufficient) and/or the small 719-example training
+  set may have limited the model's real capacity to learn the task.
 
 **Explicitly NOT in current scope** (flagged to the user, not yet confirmed):
 DPO training (Phase 8's other half; retrieval/`case_index.py` is done). The
@@ -226,18 +307,20 @@ deprioritized given time already spent, until told otherwise.
 - Every scoping decision documented with real reasoning (README/config/writeup),
   never left implicit
 - Local logic unit-tested before any GPU run (same pattern as every phase so far —
-  see `tests/test_pipeline_smoke.py`, currently 50 tests passing)
+  see `tests/test_pipeline_smoke.py`, currently 61 tests passing)
 - Stop and report (don't loop indefinitely) on: a failure that resists a few
   isolated diagnostic attempts, any change to core project scope/claims, or a
   genuine compute/time tradeoff decision
 
 ## Task tracker state (see TaskList tool)
 
-- #1-3: done (scaffold, data foundation, baselines)
-- #4: in_progress — Phase 4 SFT training (this file's main subject)
-- #5: in_progress — Tier 3 diffusion inpainting not yet run for real
-- #6-9: pending — leave-one-out/adversarial rounds, decision layer
-  (financial_risk_reasoning.py), DPO+retrieval (retrieval done, DPO
-  deprioritized per above), quantization
+- #1-4: done (scaffold, data foundation, baselines, Phase 4 SFT training)
+- #5: in_progress — Tier 3 done for real (13/15); Tier 4/5 were already done
+- #6: in_progress — leave-one-out + adversarial-rounds Kaggle drivers built,
+  neither has produced real results yet (blocked on the data-staleness fix
+  above, now corrected — see "Immediate next steps")
+- #7: done — financial_risk_reasoning.py implemented
+- #8: retrieval done, DPO deprioritized per above
+- #9: code done (quantization_bench.py), not yet run on Kaggle
 - #10: pending, optional/time-boxed (Layer 3 — drift sim, cost dashboard)
 - #11: pending — demo + writeup

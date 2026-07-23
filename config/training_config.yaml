@@ -43,7 +43,13 @@ sft:
   num_epochs: 3
   warmup_ratio: 0.03
   lr_scheduler_type: "cosine"
-  max_seq_length: 2048
+  # 2048 -> 1024 as part of v23's combined memory cut (see
+  # model_config.yaml's lora.r comment for the full v19-v22 OOM history this
+  # responds to). This value used to be decorative — sft_train.py's collate()
+  # never actually passed it to the processor, so every prior kernel (v8-v22)
+  # ran with the full untruncated sequence regardless of what this said.
+  # Fixed in the same change so this cut has a real effect.
+  max_seq_length: 1024
   save_strategy: "epoch"
   logging_steps: 10
   # Kaggle free tier gives ~30 GPU-hrs/week — 3 epochs on a few-thousand-sample

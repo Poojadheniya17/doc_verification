@@ -98,13 +98,23 @@ quantization:
   bnb_4bit_use_double_quant: true
 
 lora:
-  # r=16 -> r=12 -> r=8 (alpha kept at 2x r throughout, so LoRA's effective
-  # scaling is unchanged at every step). r=12 didn't OOM but stalled (see
-  # model.max_image_size comment) — r=8 is the most aggressive rank cut still
-  # expected to leave the adapter useful; revisit upward only once a run
-  # actually completes and clean-eval numbers show underfitting.
-  r: 8
-  alpha: 16
+  # r=16 -> r=12 -> r=8 -> r=4 (alpha kept at 2x r throughout, so LoRA's
+  # effective scaling is unchanged at every step). r=12 didn't OOM but
+  # stalled; r=8 + the v19-v22 bounded image-size search (512->384->320->256px,
+  # checkpointing off) OOM'd on all 4 attempts, closest miss ~19MiB short at
+  # the 256px floor (see results/tables/phase4_sft_summary.md and
+  # PROJECT_STATUS.md for the full table). Re-enabling checkpointing was
+  # considered but rejected: that exact config (use_reentrant=False +
+  # explicit use_cache=False) was already run on 3B in kernel v16 and hung —
+  # not an untested gap, a known-bad combination. r=4 is pushed as v23,
+  # combined with training_config.yaml's max_seq_length cut (2048->1024),
+  # as two genuinely new memory levers rather than another image-size step.
+  # r=4 is the floor before the adapter likely becomes too low-capacity to
+  # learn the task meaningfully; if v23 still OOMs, that's the signal to stop
+  # cutting quality knobs and treat this as a structural T4-capacity decision
+  # instead.
+  r: 4
+  alpha: 8
   dropout: 0.05
   target_modules:
     - "q_proj"

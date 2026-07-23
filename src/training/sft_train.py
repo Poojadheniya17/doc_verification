@@ -246,6 +246,7 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
             return build_conversation(example["image_path"], example["target"])
 
     max_image_size = model_config["model"]["max_image_size"]
+    max_seq_length = sft_cfg["max_seq_length"]
 
     def collate(batch: list[list[dict]]):
         from qwen_vl_utils import process_vision_info
@@ -266,7 +267,20 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
             for img in imgs or []:
                 img.thumbnail((max_image_size, max_image_size))
             image_inputs.extend(imgs or [])
-        inputs = processor(text=texts, images=image_inputs, padding=True, return_tensors="pt")
+        # max_seq_length was previously a decorative config value only (never
+        # passed to the processor) — found while diagnosing v19-v22's OOMs,
+        # which all ran with the full untruncated 2048-token budget regardless
+        # of what training_config.yaml said. Wiring it in for real as part of
+        # the v23 memory cut (see model_config.yaml/training_config.yaml
+        # DECISION comments for the r=4 + max_seq_length=1024 pairing).
+        inputs = processor(
+            text=texts,
+            images=image_inputs,
+            padding=True,
+            truncation=True,
+            max_length=max_seq_length,
+            return_tensors="pt",
+        )
         inputs["labels"] = inputs["input_ids"].clone()
         return inputs
 

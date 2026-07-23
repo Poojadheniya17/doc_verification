@@ -87,4 +87,16 @@ leave_one_out:
 
 quantization_bench:
   precisions: ["fp16", "int8", "int4"]
-  eval_sample_size: 200      # fixed subset so latency comparisons are apples-to-apples
+  # 200 was this value's original placeholder, sized for a much larger corpus
+  # than this project actually built. Real data available: 150 test-split
+  # genuine images + ~55 tampered examples pooled across all 5 tiers (see
+  # results/tables/phase6_leave_one_out_summary.md for the exact per-tier
+  # breakdown). Scoped down to a real, honestly-sized sample instead of
+  # requesting more examples than exist: eval_sample_size now means
+  # "genuine examples included" (n_genuine passed to
+  # adversarial_rounds.build_eval_set(), reused here rather than
+  # duplicating the same balanced-sampling logic) - every available tampered
+  # example is included uncapped on top of that, same rationale as
+  # build_eval_set()'s own docstring. 20 genuine + ~55 tampered = ~75 total,
+  # run once per precision (3x) - realistic for a single Kaggle session.
+  eval_sample_size: 20

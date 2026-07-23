@@ -49,6 +49,54 @@ def load_finetuned_model(model_config: dict, adapter_path: str, device: str = "c
     return model, processor
 
 
+def load_finetuned_model_at_precision(model_config: dict, adapter_path: str, precision: str, device: str = "cuda"):
+    """Loads the base model at a specific precision plus the trained LoRA
+    adapter — quantization_bench.py's load_fn, distinct from
+    load_finetuned_model() (which always uses model_config.yaml's fixed
+    training-time 4-bit quantization) since varying precision is the whole
+    point of this benchmark.
+
+    precision: "fp16" (no quantization, plain fp16 weights), "int8", or
+    "int4" (bitsandbytes quantization, nf4 for int4 matching training's own
+    quant_type). Not exercised locally — see module docstring.
+    """
+    import torch
+    from peft import PeftModel
+    from transformers import AutoProcessor, BitsAndBytesConfig, Qwen2_5_VLForConditionalGeneration
+
+    model_cfg = model_config["model"]
+    processor = AutoProcessor.from_pretrained(model_cfg["name"], trust_remote_code=model_cfg["trust_remote_code"])
+    device_map = {"": 0} if device == "cuda" else device
+
+    if precision == "fp16":
+        base_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_cfg["name"], torch_dtype=torch.float16, device_map=device_map,
+            trust_remote_code=model_cfg["trust_remote_code"],
+        )
+    elif precision == "int8":
+        bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+        base_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_cfg["name"], quantization_config=bnb_config, device_map=device_map,
+            trust_remote_code=model_cfg["trust_remote_code"],
+        )
+    elif precision == "int4":
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
+        )
+        base_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_cfg["name"], quantization_config=bnb_config, device_map=device_map,
+            trust_remote_code=model_cfg["trust_remote_code"],
+        )
+    else:
+        raise ValueError(f"Unknown precision: {precision!r} (expected fp16/int8/int4)")
+
+    model = PeftModel.from_pretrained(base_model, adapter_path)
+    model.eval()
+    logger.info(f"Loaded fine-tuned model at precision={precision}: base={model_cfg['name']}, adapter={adapter_path}")
+    return model, processor
+
+
 def run_single(image_path: str, model, processor, max_image_size: int = 256,
                 max_new_tokens: int = 300) -> dict:
     """Mirrors clean_eval.run_single()'s shape but uses SFT_PROMPT (the exact
@@ -165,4 +213,35 @@ def eval_examples(model, processor, examples: list[dict], max_image_size: int = 
         prediction = run_single(example["image_path"], model, processor,
                                  max_image_size=max_image_size, max_new_tokens=max_new_tokens)
         results.append(score_prediction(example, prediction))
+    return results
+
+
+def eval_examples_with_latency(model, processor, examples: list[dict], max_image_size: int = 256,
+                                max_new_tokens: int = 300) -> list[dict]:
+    """Same as eval_examples() but times each example's inference call — this
+    is quantization_bench.py's eval_fn, which needs per-example
+    "latency_seconds" alongside "correct" to compare fp16/int8/int4. Kept
+    separate from eval_examples() rather than always timing, since
+    leave-one-out/adversarial-rounds have no use for latency and timing adds
+    a small amount of overhead (torch.cuda synchronization) not worth paying
+    when it's not needed.
+    """
+    import time
+
+    import torch
+
+    results = []
+    for i, example in enumerate(examples):
+        logger.info(f"[{i + 1}/{len(examples)}] {example['image_path']}")
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        start = time.perf_counter()
+        prediction = run_single(example["image_path"], model, processor,
+                                 max_image_size=max_image_size, max_new_tokens=max_new_tokens)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        latency = time.perf_counter() - start
+        scored = score_prediction(example, prediction)
+        scored["latency_seconds"] = latency
+        results.append(scored)
     return results

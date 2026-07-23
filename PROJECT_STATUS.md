@@ -41,11 +41,36 @@ Six single-variable hang hypotheses (v11-v18) were each tested and ruled out
 in turn — full blow-by-blow chain is in `config/model_config.yaml`'s top
 DECISION comment and `results/tables/phase4_sft_summary.md`. Final decision:
 gradient checkpointing disabled entirely + `max_image_size` cut to 512 for
-real OOM margin (v15's approach, hardened). This is now committed as v19
-(commit around `git log` message "v19: final SFT config").
+real OOM margin (v15's approach, hardened). This was pushed as v19.
 
-**Immediate next step when resuming:** confirm whether v19 actually completed
-a real training run. Check:
+**v19 RESULT (2026-07-23): ERROR — a new, confusing OOM, not the hang.**
+`torch.OutOfMemoryError: Tried to allocate 44.00 MiB ... of which 8.81 MiB is
+free ... 14.55 GiB memory in use.` Crashed inside an MLP dequantize+matmul
+(bitsandbytes), step 0, 4 seconds in — NOT a repeat of the hang signature.
+
+**The confusing part:** v15 (768px images, no version pins) used 14.02 GiB
+and was short by ~40MiB. v19 (512px images — nearly half the pixel area,
+should need LESS memory) used 14.55 GiB — **~530MB MORE**, despite the
+image-size cut. That's backwards from what the change should have done.
+
+**Working hypothesis, NOT verified — flagged to the user, no fix pushed yet
+per their explicit instruction for this exact situation:** v19 is the first
+run using the library versions pinned in v17/v18 (transformers==4.57.6,
+bitsandbytes==0.49.2, etc.) — v15 ran before those pins existed, on whatever
+unpinned "latest" resolved to at the time. It's plausible the pin itself
+increased baseline memory overhead (e.g. a different default attention
+implementation, or more scratch memory in the 4-bit dequantization path)
+enough to swamp the image-size savings. This needs the user's input on how
+to proceed (test the version-overhead hypothesis specifically vs. just
+cutting image size further vs. something else) — DO NOT push another
+autonomous kernel version without checking with the user first, per their
+explicit instruction given after v19's diagnosis.
+
+**Immediate next step when resuming (if the user hasn't yet responded to
+this finding):** re-read the conversation for the user's direction on v19's
+OOM before doing anything else. Do not assume a fix and push it.
+
+Once Phase 4 genuinely reaches a completed run (whenever that happens):
 ```bash
 "/c/Users/Acer/AppData/Roaming/Python/Python314/Scripts/kaggle.exe" kernels status poojadheniya/doc-verification-zero-shot-baseline-sft-qlora
 ```

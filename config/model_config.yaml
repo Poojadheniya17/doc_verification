@@ -85,7 +85,7 @@ model:
   # reliably beats a sharper image the training can't reliably run on — but
   # it is a real, non-free cost to extraction accuracy that the clean-eval
   # numbers must be read in light of.
-  max_image_size: 320               # px, longer side — bounded step-down attempt 3/4 (512->384->320->256 floor); 384 OOM'd short by ~51MiB (594MiB needed, 542.81MiB free, 14.03GiB in use — down from v19's 14.55GiB, so the cut helped, just not enough yet)
+  max_image_size: 256               # px, longer side — bounded step-down FLOOR attempt 4/4 (512->384->320->256); 320 OOM'd short by ~163MiB (594MiB needed, 430.81MiB free, 14.14GiB in use — not monotonic vs 384's 14.03GiB, but not being investigated per explicit user call). 256 is the floor: below this, field-extraction accuracy would be too degraded to be meaningful, and a failure here means stopping to rethink rather than cutting further.
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.

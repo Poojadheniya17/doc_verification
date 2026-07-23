@@ -158,17 +158,23 @@ def load_model_for_training(model_config: dict):
         model_cfg["name"], quantization_config=bnb_config, device_map="auto",
         trust_remote_code=model_cfg["trust_remote_code"],
     )
-    # use_reentrant=False, not PEFT's default (unset -> reentrant=True):
-    # kernel v11 and v12 (different image sizes, LoRA ranks, and optimizers)
-    # both hung — not crashed — at the identical backward-pass line, only
-    # after earlier OOM fixes stopped the process from running out of memory
-    # first. Reentrant checkpointing is a documented deadlock source
-    # specifically when a checkpointed region mixes frozen and trainable
-    # parameters, which is exactly QLoRA's shape (frozen base + trainable
-    # LoRA adapters) — and the warning recommending use_reentrant=False was
-    # printed, unaddressed, in every single run's log. This is a targeted fix
-    # for a named, evidenced cause, not another capacity cut.
-    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
+    # Gradient checkpointing DISABLED entirely (use_gradient_checkpointing=False),
+    # not just its reentrant mode. Diagnostic test, not a final config choice:
+    # v11/v12 hung at the backward-pass entry line under reentrant checkpointing;
+    # v13 switched to use_reentrant=False and instead hung ~58 min *earlier*
+    # (before backward pass even started); v14 (3B, otherwise identical config)
+    # reproduced that exact same pre-backward freeze on a completely different
+    # model size. A hang that survives a model-size change is evidence the
+    # constant across every failure is something in the shared code path, not
+    # a per-model resource limit — and gradient checkpointing (in one mode or
+    # another) has been active and unchanged in every single failing run.
+    # dataloader_num_workers was checked first (confirmed 0 — the actual
+    # transformers default, never overridden in this codebase, so a
+    # multiprocessing-worker deadlock is ruled out, not just assumed absent)
+    # before reaching for this, costlier-in-memory, hypothesis. Costs more
+    # VRAM without checkpointing's recompute-instead-of-store tradeoff, but
+    # 3B's much smaller footprint (vs. 7B) should have headroom to spare.
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
     lora_cfg = model_config["lora"]
     peft_config = LoraConfig(

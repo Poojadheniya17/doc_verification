@@ -13,6 +13,7 @@ severe thrashing) — is not attempted locally. Same split as sft_train.py:
 logic tested here, the actual model call runs on Kaggle.
 """
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -88,3 +89,31 @@ def inpaint_region(image_path: str, out_dir: str, prompt: str = DEFAULT_PROMPT,
                              model_name=model_name, seed=seed)
     result["bbox_xyxy"] = mask_result["bbox_xyxy"]
     return result
+
+
+def inpaint_manifest(genuine_manifest_path: str, out_dir: str, seed: int = 42,
+                      limit: int | None = None) -> list[dict]:
+    """Mirrors field_tamper.tamper_manifest / splice.splice_manifest's pattern for
+    consistency across tiers. `limit` caps how many genuine images get processed
+    (default 15 in the Kaggle driver, matching Tier 2/4/5's scale for a fair
+    per-tier comparison). The actual diffusion pass (inpaint_region ->
+    run_inpainting) needs a GPU, so real runs happen on Kaggle — same split as
+    sft_train.py. Local calls only exercise this with inpaint_region mocked
+    (see tests/test_pipeline_smoke.py).
+    """
+    manifest = json.loads(Path(genuine_manifest_path).read_text(encoding="utf-8"))
+    entries = manifest["entries"][:limit] if limit else manifest["entries"]
+    results = []
+    for i, entry in enumerate(entries):
+        result = inpaint_region(entry["path"], out_dir, seed=seed + i)
+        result["split"] = entry["split"]
+        results.append(result)
+        status = "ok" if result["success"] else f"skipped ({result.get('reason')})"
+        logger.info(f"[{i+1}/{len(entries)}] {entry['path']}: {status}")
+
+    n_success = sum(r["success"] for r in results)
+    out_manifest_path = Path(out_dir) / "tier3_manifest.json"
+    out_manifest_path.write_text(json.dumps({"num_attempted": len(results), "num_success": n_success,
+                                              "entries": results}, indent=2), encoding="utf-8")
+    logger.info(f"Tier 3 inpainting: {n_success}/{len(results)} succeeded -> {out_manifest_path}")
+    return results

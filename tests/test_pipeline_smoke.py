@@ -21,7 +21,7 @@ from PIL import Image
 from src.data_generation.acquire_dataset import _load_annotations, _map_ground_truth, build_genuine_manifest
 from src.data_generation.degrade import DEGRADATION_KINDS, degrade_image
 from src.data_generation.field_tamper import _mutate_digits
-from src.data_generation.inpaint_forger import build_inpaint_mask
+from src.data_generation.inpaint_forger import build_inpaint_mask, inpaint_manifest
 from src.data_generation.recapture_sim import simulate_recapture
 from src.data_generation.synthetic_id_gen import _random_date, _random_id_number, _random_name, generate_synthetic_id
 from src.decision.cost_simulator import compute_cost, sweep_thresholds
@@ -321,6 +321,35 @@ def test_build_inpaint_mask_fails_gracefully_with_no_face(tmp_path):
     result = build_inpaint_mask(str(src))
     assert result["success"] is False
     assert result["mask"] is None
+
+
+def test_inpaint_manifest_builds_real_manifest_with_mocked_diffusion(tmp_path, monkeypatch):
+    """inpaint_region's actual diffusion call needs a GPU (see module docstring) —
+    monkeypatched here so the manifest-building logic itself (real, no mocking of
+    that part) gets exercised locally, same split as sft_train.py's local/Kaggle
+    divide.
+    """
+    genuine_path = tmp_path / "genuine_manifest.json"
+    genuine_path.write_text(json.dumps({"entries": [
+        {"path": "img1.jpg", "split": "train"},
+        {"path": "img2.jpg", "split": "train"},
+        {"path": "img3.jpg", "split": "test"},
+    ]}), encoding="utf-8")
+
+    def fake_inpaint_region(image_path, out_dir, prompt=None, model_name=None, seed=None):
+        return {"source_image": image_path, "forged_image": f"{out_dir}/{image_path}_tier3.jpg",
+                "tier": "tier3_inpainting", "success": True, "bbox_xyxy": [0, 0, 10, 10]}
+
+    monkeypatch.setattr("src.data_generation.inpaint_forger.inpaint_region", fake_inpaint_region)
+
+    results = inpaint_manifest(str(genuine_path), str(tmp_path), limit=2)
+    assert len(results) == 2
+    assert all(r["success"] and r["split"] == "train" for r in results)
+
+    manifest = json.loads((tmp_path / "tier3_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["num_attempted"] == 2
+    assert manifest["num_success"] == 2
+    assert len(manifest["entries"]) == 2
 
 
 def test_random_generators_produce_expected_formats():

@@ -35,6 +35,8 @@ from src.eval.finetuned_eval import score_prediction
 from src.eval.leave_one_out_eval import aggregate_fold_results, build_folds, load_tier_examples
 from src.eval.leave_one_out_eval import run as run_leave_one_out
 from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
+from src.eval.quantization_bench import cost_per_million_verifications
+from src.eval.quantization_bench import run as run_quantization_bench
 from src.retrieval.case_index import build_index, case_text, load_index, save_index
 from src.training.checkpoint_utils import latest_checkpoint
 from src.training.sft_train import _apply_tier1_field_overrides, build_conversation, build_sft_examples
@@ -716,6 +718,66 @@ def test_run_adversarial_rounds_orchestrates_and_improves(tmp_path):
     assert out_path.is_file()
     # Round 0 (round_num=0 -> 0 correct) mines min(cap, 10) = 5 failures
     assert result["rounds"][0]["num_failures_mined"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: quantization_bench.py
+# ---------------------------------------------------------------------------
+
+def _write_quantization_config(tmp_path, precisions=("fp16", "int8", "int4")) -> Path:
+    config = {"quantization_bench": {"precisions": list(precisions), "eval_sample_size": 200}}
+    path = tmp_path / "training_config.yaml"
+    path.write_text(yaml.dump(config), encoding="utf-8")
+    return path
+
+
+def test_cost_per_million_verifications_scales_with_latency():
+    cheap = cost_per_million_verifications(0.1, gpu_cost_per_hour=3.6)
+    expensive = cost_per_million_verifications(0.2, gpu_cost_per_hour=3.6)
+    assert expensive == pytest.approx(cheap * 2)
+    assert cheap == pytest.approx(100)  # 0.1s * (3.6/3600 $/s) * 1e6
+
+
+def test_run_quantization_bench_stops_without_callables(tmp_path):
+    training_config_path = _write_quantization_config(tmp_path)
+    model_config_path = tmp_path / "model_config.yaml"
+    model_config_path.write_text(yaml.dump({"model": {"name": "x"}}), encoding="utf-8")
+
+    result = run_quantization_bench(str(model_config_path), str(training_config_path), eval_examples=[{}])
+    assert result["results"] is None
+    assert result["precisions"] == ["fp16", "int8", "int4"]
+
+
+def test_run_quantization_bench_orchestrates_with_fake_callables(tmp_path):
+    training_config_path = _write_quantization_config(tmp_path, precisions=("fp16", "int4"))
+    model_config_path = tmp_path / "model_config.yaml"
+    model_config_path.write_text(yaml.dump({"model": {"name": "x"}}), encoding="utf-8")
+    out_path = tmp_path / "quant_results.json"
+
+    # Fake model: int4 is faster but less accurate than fp16 (the realistic tradeoff).
+    latency_by_precision = {"fp16": 0.5, "int4": 0.1}
+    accuracy_by_precision = {"fp16": 1.0, "int4": 0.5}
+
+    def fake_load_fn(precision, model_config):
+        return precision
+
+    def fake_eval_fn(precision, eval_examples):
+        return [{"correct": i < len(eval_examples) * accuracy_by_precision[precision],
+                  "latency_seconds": latency_by_precision[precision]} for i in range(len(eval_examples))]
+
+    result = run_quantization_bench(
+        str(model_config_path), str(training_config_path), eval_examples=[{}] * 10,
+        load_fn=fake_load_fn, eval_fn=fake_eval_fn, out_path=str(out_path),
+    )
+
+    assert result["results"]["fp16"]["avg_latency_seconds"] == 0.5
+    assert result["results"]["int4"]["avg_latency_seconds"] == 0.1
+    assert result["results"]["fp16"]["accuracy"]["mean"] == 1.0
+    assert result["results"]["int4"]["accuracy"]["mean"] == 0.5
+    # int4's estimated cost should be lower, tracking its lower latency
+    assert (result["results"]["int4"]["estimated_cost_per_million_verifications_usd"] <
+            result["results"]["fp16"]["estimated_cost_per_million_verifications_usd"])
+    assert out_path.is_file()
 
 
 # ---------------------------------------------------------------------------

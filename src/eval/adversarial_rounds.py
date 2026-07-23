@@ -21,6 +21,32 @@ from src.utils.logging_utils import get_logger
 logger = get_logger("adversarial_rounds")
 
 
+def build_eval_set(genuine_manifest_path: str, tier_manifest_paths: dict[str, str],
+                    n_genuine: int = 10, split: str = "test") -> list[dict]:
+    """Small, fixed, deliberately balanced eval set used as the constant scoring
+    set across every adversarial round — same rationale as clean_eval.py's
+    build_eval_sample(): an all-genuine or all-forged sample would make
+    accuracy meaningless. Uses build_sft_examples()'s exact example shape
+    ({"image_path", "target", "tier"}, target["tamper_verdict"] carries the
+    true answer) so a mined failure can be fed straight back into train_fn
+    without reconstructing its target from scratch.
+
+    n_genuine caps the genuine side; every available tampered example across
+    the given tiers (at this split) is included uncapped. This project's real
+    data has very few test-split tampered examples (tier1/2 sourced their
+    forgeries mostly from train-split genuine images — see
+    results/tables/phase6_leave_one_out_summary.md), so capping only the
+    genuine side is what keeps this set from being genuine-dominated, not a
+    symmetric n-per-tier cap the way clean_eval.py's smoke sample uses.
+    """
+    from src.training.sft_train import build_sft_examples
+
+    all_examples = build_sft_examples(genuine_manifest_path, tier_manifest_paths, split=split)
+    genuine = [e for e in all_examples if e["tier"] == "genuine"][:n_genuine]
+    tampered = [e for e in all_examples if e["tier"] != "genuine"]
+    return genuine + tampered
+
+
 def mine_failures(eval_results: list[dict], cap: int) -> list[dict]:
     """Selects incorrect examples for the next round's targeted retraining.
 

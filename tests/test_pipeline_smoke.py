@@ -26,7 +26,7 @@ from src.data_generation.recapture_sim import simulate_recapture
 from src.data_generation.synthetic_id_gen import _random_date, _random_id_number, _random_name, generate_synthetic_id
 from src.decision.cost_simulator import compute_cost, sweep_thresholds
 from src.decision.risk_tiering import route
-from src.eval.adversarial_rounds import build_accuracy_curve, mine_failures
+from src.eval.adversarial_rounds import build_accuracy_curve, build_eval_set, mine_failures
 from src.eval.adversarial_rounds import run as run_adversarial_rounds
 from src.eval.clean_eval import _extract_json, build_eval_sample
 from src.eval.finetuned_eval import score_prediction
@@ -636,6 +636,30 @@ def test_run_leave_one_out_orchestrates_with_fake_callables(tmp_path):
 # ---------------------------------------------------------------------------
 # Phase 6: adversarial_rounds.py
 # ---------------------------------------------------------------------------
+
+def test_build_eval_set_caps_genuine_but_not_tampered(tmp_path):
+    genuine_manifest = {"entries": [
+        {"path": f"g{i}.jpg", "split": "test", "document_code": "x",
+         "ground_truth": {"name": f"N{i}", "dob": "01.01.2000", "id_number": f"X{i}",
+                           "address": None, "expiry": "01.01.2030"}}
+        for i in range(5)
+    ]}
+    genuine_path = tmp_path / "genuine.json"
+    genuine_path.write_text(json.dumps(genuine_manifest), encoding="utf-8")
+
+    tier2_manifest = {"entries": [
+        {"success": True, "source_image": "g0.jpg", "forged_image": "g0_tier2.jpg", "bbox_xyxy": [1, 2, 3, 4]},
+        {"success": True, "source_image": "g1.jpg", "forged_image": "g1_tier2.jpg", "bbox_xyxy": [5, 6, 7, 8]},
+    ]}
+    tier2_path = tmp_path / "tier2.json"
+    tier2_path.write_text(json.dumps(tier2_manifest), encoding="utf-8")
+
+    eval_set = build_eval_set(str(genuine_path), {"tier2_splicing": str(tier2_path)}, n_genuine=2, split="test")
+    tiers = [e["tier"] for e in eval_set]
+    assert tiers.count("genuine") == 2  # capped
+    assert tiers.count("tier2_splicing") == 2  # both tampered examples kept, uncapped
+    assert all(e["target"]["tamper_verdict"] in ("genuine", "tampered") for e in eval_set)
+
 
 def test_mine_failures_caps_and_filters_incorrect():
     eval_results = [

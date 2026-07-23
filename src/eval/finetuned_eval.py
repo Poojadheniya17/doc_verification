@@ -71,12 +71,56 @@ def run_single(image_path: str, model, processor, max_image_size: int = 256,
     inputs = inputs.to(model.device)
 
     with torch.no_grad():
-        generated = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False,
+                                  output_scores=True, return_dict_in_generate=True)
+    generated = outputs.sequences
     trimmed = [out[len(inp):] for inp, out in zip(inputs["input_ids"], generated)]
     raw_text = processor.batch_decode(trimmed, skip_special_tokens=True)[0]
 
     parsed = _extract_json(raw_text)
-    return {"image_path": image_path, "raw_output": raw_text, "parsed": parsed, "parse_success": parsed is not None}
+
+    # Average per-token max-softmax-probability across the generated sequence,
+    # as a rough "how confident was the model in this whole response" signal.
+    # zip() truncates to the shorter of the two if generate() ever produces a
+    # scores/tokens length mismatch (a known edge case with early stopping) —
+    # a safe fallback that slightly under-samples rather than crashing.
+    token_probs = [
+        torch.softmax(step_scores[0], dim=-1)[token_id].item()
+        for step_scores, token_id in zip(outputs.scores, trimmed[0])
+    ]
+    generation_confidence = sum(token_probs) / len(token_probs) if token_probs else 0.5
+
+    tamper_verdict = parsed.get("tamper_verdict") if parsed else None
+    p_genuine = generation_confidence_to_p_genuine(generation_confidence, tamper_verdict)
+
+    return {"image_path": image_path, "raw_output": raw_text, "parsed": parsed,
+            "parse_success": parsed is not None, "generation_confidence": generation_confidence,
+            "confidence": p_genuine}
+
+
+def generation_confidence_to_p_genuine(generation_confidence: float, tamper_verdict: str | None) -> float:
+    """Maps the model's own confidence in whatever it just generated (see
+    run_single()'s output_scores handling above) into P(genuine) — the single
+    number src/decision/risk_tiering.py's route() and cost_simulator.py's
+    threshold sweep operate on.
+
+    A documented simplification, not a claim of true field-level calibration:
+    this measures confidence in the WHOLE generated response (verdict +
+    extracted fields + explanation together), not the tamper_verdict token
+    span in isolation — isolating that span would need locating its exact
+    position in the output, which is real extra work for a proxy signal this
+    project's decision layer only needs to be directionally reasonable, not
+    perfectly calibrated. High confidence + "genuine" -> high P(genuine);
+    high confidence + "tampered" -> low P(genuine) (the model is confident
+    the document IS fake); a missing/unparseable verdict maps to 0.5
+    (maximally uncertain — the decision layer should route this to human
+    review, not silently guess a direction).
+    """
+    if tamper_verdict == "genuine":
+        return generation_confidence
+    if tamper_verdict == "tampered":
+        return 1.0 - generation_confidence
+    return 0.5
 
 
 def score_prediction(example: dict, prediction: dict) -> dict:

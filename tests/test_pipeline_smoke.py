@@ -25,7 +25,9 @@ from src.data_generation.inpaint_forger import build_inpaint_mask, inpaint_manif
 from src.data_generation.recapture_sim import simulate_recapture
 from src.data_generation.synthetic_id_gen import _random_date, _random_id_number, _random_name, generate_synthetic_id
 from src.decision.cost_simulator import compute_cost, sweep_thresholds
+from src.decision.financial_risk_reasoning import explain_decision
 from src.decision.risk_tiering import route
+from src.eval.finetuned_eval import generation_confidence_to_p_genuine
 from src.eval.adversarial_rounds import build_accuracy_curve, build_eval_set, mine_failures
 from src.eval.adversarial_rounds import run as run_adversarial_rounds
 from src.eval.clean_eval import _extract_json, build_eval_sample
@@ -772,6 +774,46 @@ def test_sweep_thresholds_finds_best_and_skips_invalid_pairs():
     assert swept["best"]["avg_cost_per_doc"] == min(c["avg_cost_per_doc"] for c in swept["curve"])
     for combo in swept["curve"]:
         assert combo["thresholds"]["auto_reject_max_confidence"] < combo["thresholds"]["auto_approve_min_confidence"]
+
+
+def test_generation_confidence_to_p_genuine():
+    assert generation_confidence_to_p_genuine(0.9, "genuine") == 0.9
+    assert generation_confidence_to_p_genuine(0.9, "tampered") == pytest.approx(0.1)
+    assert generation_confidence_to_p_genuine(0.7, None) == 0.5  # unparseable verdict -> maximally uncertain
+
+
+def test_explain_decision_auto_approve():
+    document_result = {
+        "image_path": "doc.jpg",
+        "parsed": {"tamper_verdict": "genuine", "explanation": "All fields consistent, no visual tampering."},
+        "confidence": 0.97,
+    }
+    text = explain_decision(document_result, _COST_CONFIG)
+    assert "Decision: auto approve" in text
+    assert "0.97" in text
+    assert "All fields consistent" in text
+    assert "500" in text  # cites the false-accept dollar rationale for this tier
+
+
+def test_explain_decision_human_review_with_similar_cases():
+    document_result = {
+        "image_path": "doc.jpg",
+        "parsed": {"tamper_verdict": "tampered", "explanation": "Expiry date font looks mismatched."},
+        "confidence": 0.5,
+    }
+    similar_cases = [
+        {"case_id": "case_12", "tamper_verdict": "tampered", "similarity": 0.88},
+        {"case_id": "case_07", "tamper_verdict": "genuine", "similarity": 0.61},
+    ]
+    text = explain_decision(document_result, _COST_CONFIG, similar_cases=similar_cases)
+    assert "Decision: human review" in text
+    assert "case_12" in text and "case_07" in text
+    assert "5" in text  # cites the manual-review dollar rationale for this tier
+
+
+def test_explain_decision_rejects_out_of_range_confidence():
+    with pytest.raises(ValueError):
+        explain_decision({"parsed": {}, "confidence": 1.2}, _COST_CONFIG)
 
 
 # ---------------------------------------------------------------------------

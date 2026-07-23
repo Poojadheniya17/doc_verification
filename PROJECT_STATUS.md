@@ -275,25 +275,71 @@ Phase 5/6/7/9 the same day.** Real status of each:
    (`kaggle datasets files poojadheniya/doc-verification-data`, count per
    document-code subfolder).
 
-**Immediate next steps when resuming:**
-- Confirm the corrected dataset version (data/ fully synced) finished
-  processing (`kaggle datasets status ...` → "ready").
-- Re-push `phase6_adversarial_rounds` (its first run crashed partway through
-  round 0's eval on the missing-file bug above, no real results yet).
-- Push `phase6_leave_one_out` once Tier 3's real data is confirmed live in
-  the dataset (5 folds, ~11h — real session-length risk, see that kernel's
-  own docstring; per-fold results are written incrementally as a mitigation).
-- Once both produce real results: quantization benchmarking Kaggle driver
-  (not yet built — `quantization_bench.py`'s code is ready, needs a
-  `kaggle_kernels/phase9_quantization/` driver following the same pattern),
-  Streamlit demo app, results notebook, and the writeup.
-- **Writeup requirement, explicitly restated by the user:** the epoch 2-3
-  loss plateau seen in v24's training (loss stuck ~1.25-1.26 after a fast
-  drop in epoch 1) must be treated as a real finding, not a footnote — if
-  leave-one-out/adversarial-rounds eval results come back weak, the honest
-  hypothesis chain to flag is that LoRA rank 4 (cut for memory reasons, not
-  because r=4 was judged sufficient) and/or the small 719-example training
-  set may have limited the model's real capacity to learn the task.
+8. **TWO MORE REAL BUGS FOUND AND FIXED (2026-07-23 night, same debugging
+   session):**
+   - **Tier manifest filename convention bug**: `_default_tier_manifest_paths()`
+     (and both Kaggle drivers' own copy of the same logic) derived each
+     tier's manifest filename from its full descriptive name
+     (`tier1_field_tamper_manifest.json`), but every tier's manifest is
+     actually written with just a short numeric prefix
+     (`tier1_manifest.json` — see field_tamper.py/splice.py/etc's own
+     manifest-writing code). `build_sft_examples()` silently skips
+     nonexistent tier paths by design, so this produced **zero** tier
+     examples/folds with no error at all — invisible until a real Kaggle run
+     logged "0 folds" / "0 tampered examples". Fixed in
+     `sft_train._default_tier_manifest_paths()` and both kernel drivers;
+     added a regression test that exercises real repo data (not fixtures),
+     since the old test suite only ever passed explicit manifest paths and
+     never exercised the default path-construction logic for real.
+   - **Backslash (Windows-native) paths baked into every locally-generated
+     manifest**: `acquire_dataset.py`/`field_tamper.py`/`splice.py`/
+     `synthetic_id_gen.py`/`recapture_sim.py`/`inpaint_forger.py` all
+     serialized manifest path fields via bare `str(some_path)`, which
+     produces backslash separators on this Windows dev machine. Every path
+     resolved fine locally (Windows accepts both slash styles) —
+     completely invisible until a manifest reached a real Linux Kaggle
+     kernel, where it's a hard `FileNotFoundError`. `kaggle_package.py`'s
+     `stage_package()`/`_rewrite_paths_in_place()` already existed
+     specifically to normalize this before staging (a sign this was a
+     known, previously-solved problem) — but every manual `cp -r` dataset
+     refresh done during this session's later work bypassed that utility
+     entirely, pushing raw (backslash) local manifests straight through.
+     Fixed at the source (every generator now uses `.as_posix()`); existing
+     manifests normalized in place via the project's own
+     `_rewrite_paths_in_place()`; added a regression test asserting no
+     manifest contains a backslash path.
+   - **A real, separate infrastructure quirk observed twice**: a Kaggle
+     dataset version reporting `"ready"` via `datasets status` did NOT mean
+     a kernel pushed immediately after would see the update — both the
+     data-completeness fix and the backslash-path fix showed this exact
+     pattern (a kernel/diagnostic-kernel pushed right after "ready" still
+     saw stale data), resolving itself after waiting ~10-15 more minutes
+     with no further action. **Anyone hitting a Kaggle run that seems to
+     contradict a just-completed dataset push should suspect this
+     propagation lag before assuming the fix itself is wrong** — verify with
+     the cheap `kaggle_kernels/diagnostic_check/` kernel (no GPU, no pip
+     installs, runs in seconds) rather than burning GPU hours re-testing.
+   - **Both `phase6_leave_one_out` (v3) and `phase6_adversarial_rounds` (v4)
+     confirmed genuinely running past every previous failure point** as of
+     this update: LOO built 754 real training examples for fold 1 and is
+     training for real; adversarial-rounds cleared 18+/30 eval examples with
+     no crash. This is the first time either has done real work.
+
+**Status as of this update (overnight autonomous session, user asleep,
+explicit full autonomy granted — see chat for exact wording):** both Phase 6
+Kaggle jobs are running for real. Continuing to monitor them at a long
+interval while building quantization benchmarking, the Streamlit demo, the
+results notebook, and the writeup in parallel — see task list (`TaskList`
+tool) for live status of each. Every decision made autonomously tonight is
+being logged in this file as it happens, not left implicit.
+
+**Writeup requirement, explicitly restated by the user:** the epoch 2-3
+loss plateau seen in v24's training (loss stuck ~1.25-1.26 after a fast
+drop in epoch 1) must be treated as a real finding, not a footnote — if
+leave-one-out/adversarial-rounds eval results come back weak, the honest
+hypothesis chain to flag is that LoRA rank 4 (cut for memory reasons, not
+because r=4 was judged sufficient) and/or the small 719-example training
+set may have limited the model's real capacity to learn the task.
 
 **Explicitly NOT in current scope** (flagged to the user, not yet confirmed):
 DPO training (Phase 8's other half; retrieval/`case_index.py` is done). The

@@ -14,13 +14,18 @@ model:
   revision: "main"
   trust_remote_code: true
   torch_dtype: "bfloat16"           # compute dtype; base weights loaded in 4-bit (see quantization block)
-  # Dropped from 1280 after real Kaggle runs (kernel v9/v10) OOM'd in the SFT
-  # backward pass on a T4 by ~1.4-1.7GB even after fixing the training path's
-  # image-resize (was uncapped) and allocator fragmentation
-  # (PYTORCH_CUDA_ALLOC_CONF=expandable_segments). Combined with lora.r below
-  # (moderate cut on two axes rather than a large cut on one) to close the gap
-  # while limiting the hit to field-extraction accuracy on dense ID text.
-  max_image_size: 896               # px, longer side — balances OCR legibility vs vision-token budget
+  # Dropped 1280->896->768 across three real Kaggle runs. v9/v10 (1280, then
+  # 896) OOM'd cleanly in the SFT backward pass by ~1.4-1.7GB. v11 (896 +
+  # lora.r=12, see below) didn't OOM at all this time — it silently STALLED at
+  # the exact same backward-pass line for 39 minutes with zero progress and no
+  # crash, most likely paged_adamw_8bit paging to host memory under pressure
+  # rather than erroring (see training_config.yaml's sft.optim comment: the
+  # optimizer itself was also changed, not just this value, in response).
+  # 768 + lora.r=8 is the most aggressive cut still expected to leave the
+  # model useful, applied together with dropping the paged optimizer so this
+  # targets the suspected root cause (paging under pressure) rather than only
+  # the symptom (footprint).
+  max_image_size: 768               # px, longer side — balances OCR legibility vs vision-token budget
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.
@@ -31,15 +36,13 @@ quantization:
   bnb_4bit_use_double_quant: true
 
 lora:
-  # Dropped from r=16/alpha=32 to r=12/alpha=24 (same 2x alpha:r ratio, so the
-  # effective LoRA scaling is unchanged) alongside the max_image_size cut
-  # above — real Kaggle runs OOM'd in the SFT backward pass on a T4 by
-  # ~1.4-1.7GB, and trainable-param gradient memory is one of the two
-  # concrete levers that actually reduces backward-pass memory (unlike e.g.
-  # batch size, already at its floor of 1). Revisit rank upward only if
-  # underfitting shows in Phase 4 clean-eval numbers, now that VRAM allows it.
-  r: 12
-  alpha: 24
+  # r=16 -> r=12 -> r=8 (alpha kept at 2x r throughout, so LoRA's effective
+  # scaling is unchanged at every step). r=12 didn't OOM but stalled (see
+  # model.max_image_size comment) — r=8 is the most aggressive rank cut still
+  # expected to leave the adapter useful; revisit upward only once a run
+  # actually completes and clean-eval numbers show underfitting.
+  r: 8
+  alpha: 16
   dropout: 0.05
   target_modules:
     - "q_proj"

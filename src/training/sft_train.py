@@ -242,13 +242,19 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         save_strategy=sft_cfg["save_strategy"],
         logging_steps=sft_cfg["logging_steps"],
         bf16=True,
-        # Paged 8-bit Adam (bitsandbytes) instead of the Trainer default
-        # (regular fp32 AdamW): standard QLoRA practice specifically because it
-        # pages optimizer state to CPU under memory pressure rather than
-        # OOMing outright — cheap insurance on a T4 that's already tight with
-        # the 4-bit base model loaded, and the optimizer state itself is small
-        # regardless (only the 47.6M LoRA params are trainable).
-        optim="paged_adamw_8bit",
+        # Switched from paged_adamw_8bit to the non-paged adamw_bnb_8bit after
+        # kernel v11 (max_image_size=896, lora.r=12) silently STALLED at the
+        # exact same backward-pass line for 39 minutes with zero progress and
+        # no crash — never OOM'd cleanly the way v9/v10 (larger footprint,
+        # still on paged_adamw_8bit) did. Working hypothesis: the paged
+        # optimizer was paging optimizer state to host memory under pressure
+        # and thrashing rather than erroring. v12 cuts the footprint further
+        # (model_config.yaml: max_image_size 768, lora.r 8) specifically so a
+        # non-paged optimizer becomes viable again — this targets the
+        # suspected root cause (paging under pressure) rather than just
+        # shrinking the same paged config further, which would only mask the
+        # symptom if the hypothesis is right.
+        optim="adamw_bnb_8bit",
         # Gated on an actual WANDB_API_KEY being present, not just
         # environment == "kaggle" — found the hard way on the first real
         # Kaggle run: Trainer tried to wandb.init() with no key configured at

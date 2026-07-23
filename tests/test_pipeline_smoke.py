@@ -29,6 +29,7 @@ from src.decision.risk_tiering import route
 from src.eval.adversarial_rounds import build_accuracy_curve, mine_failures
 from src.eval.adversarial_rounds import run as run_adversarial_rounds
 from src.eval.clean_eval import _extract_json, build_eval_sample
+from src.eval.finetuned_eval import score_prediction
 from src.eval.leave_one_out_eval import aggregate_fold_results, build_folds, load_tier_examples
 from src.eval.leave_one_out_eval import run as run_leave_one_out
 from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
@@ -283,20 +284,71 @@ def test_build_sft_examples_from_fixture_manifests(tmp_path):
     tier2_path = tmp_path / "tier2.json"
     tier2_path.write_text(json.dumps(tier2_manifest), encoding="utf-8")
 
-    train_examples = build_sft_examples(str(genuine_path), str(tier1_path), str(tier2_path), split="train")
-    # g1.jpg is split=test, so only g0's genuine + its tier1 + tier2 derivatives land in train
-    assert len(train_examples) == 3
+    tier3_manifest = {"entries": [
+        {"success": True, "source_image": "g0.jpg", "forged_image": "g0_tier3.jpg", "bbox_xyxy": [9, 10, 11, 12]},
+    ]}
+    tier3_path = tmp_path / "tier3.json"
+    tier3_path.write_text(json.dumps(tier3_manifest), encoding="utf-8")
+
+    tier4_manifest = {"entries": [
+        {"success": True, "forged_image": "synth0_tier4.jpg",
+         "ground_truth": {"name": "E F", "dob": "03.03.2000", "id_number": "X3",
+                           "address": None, "expiry": "03.03.2030"}},
+    ]}
+    tier4_path = tmp_path / "tier4.json"
+    tier4_path.write_text(json.dumps(tier4_manifest), encoding="utf-8")
+
+    tier5_manifest = {"entries": [
+        {"success": True, "source_image": "g0.jpg", "forged_image": "g0_tier5.jpg", "split": "train"},
+    ]}
+    tier5_path = tmp_path / "tier5.json"
+    tier5_path.write_text(json.dumps(tier5_manifest), encoding="utf-8")
+
+    all_tiers = {
+        "tier1_field_tamper": str(tier1_path), "tier2_splicing": str(tier2_path),
+        "tier3_inpainting": str(tier3_path), "tier4_full_synthetic": str(tier4_path),
+        "tier5_recapture": str(tier5_path),
+    }
+
+    train_examples = build_sft_examples(str(genuine_path), all_tiers, split="train")
+    # g1.jpg is split=test, so only g0's genuine + its tier1/2/3/5 derivatives land in
+    # train, plus tier4 (no split of its own, included unconditionally — see docstring)
+    assert len(train_examples) == 6
     tiers = {e["tier"] for e in train_examples}
-    assert tiers == {"genuine", "tier1_field_tamper", "tier2_splicing"}
+    assert tiers == {"genuine", "tier1_field_tamper", "tier2_splicing", "tier3_inpainting",
+                      "tier4_full_synthetic", "tier5_recapture"}
 
     tier1_example = next(e for e in train_examples if e["tier"] == "tier1_field_tamper")
     assert tier1_example["target"]["id_number"] == "X9"  # overridden by the tamper
     assert tier1_example["target"]["tamper_verdict"] == "tampered"
     assert tier1_example["target"]["tamper_regions"] == [[1, 2, 3, 4]]
 
-    test_examples = build_sft_examples(str(genuine_path), str(tier1_path), str(tier2_path), split="test")
-    assert len(test_examples) == 1
-    assert test_examples[0]["tier"] == "genuine"
+    tier3_example = next(e for e in train_examples if e["tier"] == "tier3_inpainting")
+    assert tier3_example["target"]["id_number"] == "X1"  # carried over from source, unchanged
+    assert tier3_example["target"]["tamper_regions"] == [[9, 10, 11, 12]]
+
+    tier4_example = next(e for e in train_examples if e["tier"] == "tier4_full_synthetic")
+    assert tier4_example["target"]["id_number"] == "X3"  # from the manifest's own ground_truth
+    assert tier4_example["target"]["tamper_regions"] == []
+
+    tier5_example = next(e for e in train_examples if e["tier"] == "tier5_recapture")
+    assert tier5_example["target"]["id_number"] == "X1"  # carried over from source, unchanged
+    assert tier5_example["target"]["tamper_regions"] == []
+
+    # Only tier1_field_tamper + tier2_splicing passed -> only genuine + those two land
+    two_tier_examples = build_sft_examples(
+        str(genuine_path), {"tier1_field_tamper": str(tier1_path), "tier2_splicing": str(tier2_path)}, split="train")
+    assert len(two_tier_examples) == 3
+    assert {e["tier"] for e in two_tier_examples} == {"genuine", "tier1_field_tamper", "tier2_splicing"}
+
+    test_examples = build_sft_examples(str(genuine_path), all_tiers, split="test")
+    # g1.jpg (split=test) has no tier1/2/3/5 derivatives in these fixtures (all keyed off
+    # g0), but tier4 has no split of its own and is included unconditionally regardless of
+    # the split argument (see build_sft_examples' docstring) — real callers only ever pass
+    # split="train" today (train_sft.train() default), so this isn't a live contamination
+    # risk, just documented, honest behavior of a known data-generation gap.
+    assert len(test_examples) == 2
+    assert {e["tier"] for e in test_examples} == {"genuine", "tier4_full_synthetic"}
 
 
 def test_build_conversation_structure():
@@ -350,6 +402,30 @@ def test_inpaint_manifest_builds_real_manifest_with_mocked_diffusion(tmp_path, m
     assert manifest["num_attempted"] == 2
     assert manifest["num_success"] == 2
     assert len(manifest["entries"]) == 2
+
+
+def test_score_prediction_with_true_label_shape():
+    example = {"image_path": "img.jpg", "tier": "tier2_splicing", "true_label": "tampered"}
+    correct_prediction = {"parsed": {"tamper_verdict": "tampered"}, "parse_success": True}
+    wrong_prediction = {"parsed": {"tamper_verdict": "genuine"}, "parse_success": True}
+    unparseable_prediction = {"parsed": None, "parse_success": False}
+
+    assert score_prediction(example, correct_prediction)["correct"] is True
+    assert score_prediction(example, wrong_prediction)["correct"] is False
+    result = score_prediction(example, unparseable_prediction)
+    assert result["correct"] is False
+    assert result["predicted_verdict"] is None
+    assert "target" not in result
+
+
+def test_score_prediction_with_target_shape_passes_target_through():
+    target = {"name": "A", "tamper_verdict": "genuine", "tamper_regions": []}
+    example = {"image_path": "img.jpg", "tier": "genuine", "target": target}
+    prediction = {"parsed": {"tamper_verdict": "genuine"}, "parse_success": True}
+
+    result = score_prediction(example, prediction)
+    assert result["correct"] is True
+    assert result["target"] == target  # passed through unchanged for later retraining use
 
 
 def test_random_generators_produce_expected_formats():

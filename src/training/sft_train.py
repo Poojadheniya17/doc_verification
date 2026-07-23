@@ -80,12 +80,39 @@ def _apply_tier1_field_overrides(ground_truth: dict, tampers: list[dict]) -> dic
     return updated
 
 
-def build_sft_examples(genuine_manifest_path: str, tier1_manifest_path: str | None = None,
-                        tier2_manifest_path: str | None = None, split: str = "train") -> list[dict]:
-    """Builds {"image_path", "target": {...schema...}} training examples from the
-    genuine manifest (extraction + "genuine" verdict) and Tier 1/2 forgery
-    manifests (tamper verdict + localization bbox, extraction fields carried
-    over from the source genuine document with Tier 1's overrides applied).
+def build_sft_examples(genuine_manifest_path: str, tier_manifest_paths: dict[str, str] | None = None,
+                        split: str = "train") -> list[dict]:
+    """Builds {"image_path", "target": {...schema...}, "tier": ...} training
+    examples from the genuine manifest (extraction + "genuine" verdict) plus
+    whichever forgery tier manifests are passed in tier_manifest_paths — any
+    subset of tier1_field_tamper/tier2_splicing/tier3_inpainting/
+    tier4_full_synthetic/tier5_recapture. Generalized from a hardcoded
+    tier1+tier2 signature (Phase 4) so leave_one_out_eval.py's train_fn can
+    pass an arbitrary subset (one tier held out per fold) without this
+    function needing to know about folds at all.
+
+    Per-tier target construction differs by how each tier was generated:
+    - tier1_field_tamper: text fields edited in place — source ground truth
+      with _apply_tier1_field_overrides() applied, tamper_regions from each
+      individual tamper's own bbox (possibly several per image).
+    - tier2_splicing / tier3_inpainting: only the photo region is replaced —
+      source ground truth carried over unchanged, single tamper_regions bbox
+      (each manifest's own "bbox_xyxy").
+    - tier4_full_synthetic: a wholly fabricated document, not derived from any
+      real source — ground_truth comes directly from the manifest's own entry
+      (no source lookup). tamper_regions=[] since there's no single localized
+      edit region, the entire document is synthetic. Known gap: this tier's
+      manifest doesn't record a train/test split (synthetic_id_gen.py never
+      assigns one) — included unconditionally regardless of the `split`
+      argument rather than silently dropped, since there's no principled
+      holdout to apply. Flagged here rather than fixed by regenerating, since
+      leave-one-out's fold design already keeps a held-out tier out of its
+      own fold's training set regardless of this.
+    - tier5_recapture: a screen-recapture simulation of a genuine source —
+      printed fields are unchanged (only image quality is degraded), so
+      ground truth is carried over from the source unchanged. tamper_regions=[]
+      for the same reason as tier4 — a global quality transform, not a
+      localized edit.
     """
     examples = []
 
@@ -97,8 +124,11 @@ def build_sft_examples(genuine_manifest_path: str, tier1_manifest_path: str | No
         target = {**entry["ground_truth"], "tamper_verdict": "genuine", "tamper_regions": []}
         examples.append({"image_path": entry["path"], "target": target, "tier": "genuine"})
 
-    if tier1_manifest_path and Path(tier1_manifest_path).exists():
-        tier1 = json.loads(Path(tier1_manifest_path).read_text(encoding="utf-8"))
+    tier_manifest_paths = tier_manifest_paths or {}
+
+    tier1_path = tier_manifest_paths.get("tier1_field_tamper")
+    if tier1_path and Path(tier1_path).exists():
+        tier1 = json.loads(Path(tier1_path).read_text(encoding="utf-8"))
         for entry in tier1["entries"]:
             if not entry.get("success"):
                 continue
@@ -110,19 +140,43 @@ def build_sft_examples(genuine_manifest_path: str, tier1_manifest_path: str | No
             target["tamper_regions"] = [t["bbox_xyxy"] for t in entry["tampers"]]
             examples.append({"image_path": entry["forged_image"], "target": target, "tier": "tier1_field_tamper"})
 
-    if tier2_manifest_path and Path(tier2_manifest_path).exists():
-        tier2 = json.loads(Path(tier2_manifest_path).read_text(encoding="utf-8"))
-        for entry in tier2["entries"]:
+    # tier2_splicing and tier3_inpainting share the same shape: source lookup,
+    # ground truth carried over unchanged, single bbox_xyxy region.
+    for tier_name in ("tier2_splicing", "tier3_inpainting"):
+        path = tier_manifest_paths.get(tier_name)
+        if not path or not Path(path).exists():
+            continue
+        manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+        for entry in manifest["entries"]:
             if not entry.get("success"):
                 continue
             source_entry = genuine_by_path.get(entry["source_image"])
             if not source_entry or source_entry["split"] != split or not source_entry.get("ground_truth"):
                 continue
-            # Splicing only replaces the photo — text fields are untouched, so no
-            # field-override logic is needed here (unlike Tier 1).
             target = {**source_entry["ground_truth"], "tamper_verdict": "tampered",
                       "tamper_regions": [entry["bbox_xyxy"]]}
-            examples.append({"image_path": entry["forged_image"], "target": target, "tier": "tier2_splicing"})
+            examples.append({"image_path": entry["forged_image"], "target": target, "tier": tier_name})
+
+    tier4_path = tier_manifest_paths.get("tier4_full_synthetic")
+    if tier4_path and Path(tier4_path).exists():
+        tier4 = json.loads(Path(tier4_path).read_text(encoding="utf-8"))
+        for entry in tier4["entries"]:
+            if not entry.get("success") or not entry.get("ground_truth"):
+                continue
+            target = {**entry["ground_truth"], "tamper_verdict": "tampered", "tamper_regions": []}
+            examples.append({"image_path": entry["forged_image"], "target": target, "tier": "tier4_full_synthetic"})
+
+    tier5_path = tier_manifest_paths.get("tier5_recapture")
+    if tier5_path and Path(tier5_path).exists():
+        tier5 = json.loads(Path(tier5_path).read_text(encoding="utf-8"))
+        for entry in tier5["entries"]:
+            if not entry.get("success"):
+                continue
+            source_entry = genuine_by_path.get(entry["source_image"])
+            if not source_entry or source_entry["split"] != split or not source_entry.get("ground_truth"):
+                continue
+            target = {**source_entry["ground_truth"], "tamper_verdict": "tampered", "tamper_regions": []}
+            examples.append({"image_path": entry["forged_image"], "target": target, "tier": "tier5_recapture"})
 
     return examples
 
@@ -137,9 +191,16 @@ def build_conversation(image_path: str, target: dict) -> list[dict]:
     ]
 
 
-def load_model_for_training(model_config: dict):
+def load_model_for_training(model_config: dict, resume_from_adapter: str | None = None):
     """Loads Qwen2.5-VL in 4-bit (QLoRA) and wraps it with a LoRA adapter per
     model_config.yaml. Not exercised locally — see module docstring.
+
+    resume_from_adapter: path to an existing saved LoRA adapter (e.g. Phase 4's
+    checkpoints/sft_v24_final, or a prior adversarial round's checkpoint) to
+    continue training from, instead of a freshly-initialized adapter. Needed
+    for adversarial_rounds.py's targeted retraining, which builds on the
+    previous round's model rather than starting over from the base model each
+    time.
     """
     import torch
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -199,39 +260,77 @@ def load_model_for_training(model_config: dict):
     model.config.use_cache = False
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
 
-    lora_cfg = model_config["lora"]
-    peft_config = LoraConfig(
-        r=lora_cfg["r"], lora_alpha=lora_cfg["alpha"], lora_dropout=lora_cfg["dropout"],
-        target_modules=lora_cfg["target_modules"], bias=lora_cfg["bias"], task_type=lora_cfg["task_type"],
-    )
-    model = get_peft_model(model, peft_config)
+    if resume_from_adapter:
+        from peft import PeftModel
+        model = PeftModel.from_pretrained(model, resume_from_adapter, is_trainable=True)
+        logger.info(f"Resumed LoRA adapter weights from {resume_from_adapter}")
+    else:
+        lora_cfg = model_config["lora"]
+        peft_config = LoraConfig(
+            r=lora_cfg["r"], lora_alpha=lora_cfg["alpha"], lora_dropout=lora_cfg["dropout"],
+            target_modules=lora_cfg["target_modules"], bias=lora_cfg["bias"], task_type=lora_cfg["task_type"],
+        )
+        model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
     return model, processor
 
 
-def train(model_config_path: str, training_config_path: str, environment: str | None = None) -> None:
+DEFAULT_TIER_NAMES = ["tier1_field_tamper", "tier2_splicing"]  # Phase 4 (v24)'s exact composition
+
+
+def _default_tier_manifest_paths(paths: dict, tier_names: list[str]) -> dict[str, str]:
+    """Maps tier names to their manifest paths under this environment's data_root,
+    for tiers that use the standard <data_root>/synthetic_forgeries/<tier>/<tier>_manifest.json
+    layout (true for all 5 tiers as generated by this project's data_generation/ scripts).
+    """
+    return {
+        tier: str(paths["data_root"] / "synthetic_forgeries" / tier / f"{tier}_manifest.json")
+        for tier in tier_names
+    }
+
+
+def train(model_config_path: str, training_config_path: str, environment: str | None = None,
+          tier_names: list[str] | None = None, train_examples: list[dict] | None = None,
+          checkpoint_subdir: str = "sft", resume_from_adapter: str | None = None) -> str | None:
+    """tier_names: which forgery tiers to include when building the training set
+    (defaults to Phase 4's exact tier1+tier2 composition). Ignored if
+    train_examples is given directly.
+
+    train_examples: bypasses build_sft_examples() entirely and trains on these
+    examples as-is — the injection point leave_one_out_eval.py's train_fn (a
+    specific tier subset per fold) and adversarial_rounds.py's train_fn (mined
+    failure examples only, reconstructed with their real ground-truth target)
+    both use, so this function doesn't need to know about folds or rounds.
+
+    checkpoint_subdir: subdirectory under checkpoint_root to save into (e.g.
+    "loo_fold_tier2_splicing", "adv_round1") so parallel experiments don't
+    overwrite Phase 4's "sft" checkpoint or each other.
+
+    resume_from_adapter: see load_model_for_training(). Returns the final
+    checkpoint's directory path (the "model_handle" train_fn callables hand to
+    eval_fn), or None if training didn't run (local environment).
+    """
     model_config = load_yaml(model_config_path)
     training_config = load_yaml(training_config_path)
     if environment:
         training_config["environment"] = environment
     paths = resolve_paths(training_config)
 
-    genuine_manifest = paths["data_root"] / "processed" / "genuine_manifest_templates.json"
-    tier1_manifest = paths["data_root"] / "synthetic_forgeries" / "tier1_field_tamper" / "tier1_manifest.json"
-    tier2_manifest = paths["data_root"] / "synthetic_forgeries" / "tier2_splicing" / "tier2_manifest.json"
-
-    train_examples = build_sft_examples(str(genuine_manifest), str(tier1_manifest), str(tier2_manifest), split="train")
+    if train_examples is None:
+        genuine_manifest = paths["data_root"] / "processed" / "genuine_manifest_templates.json"
+        tier_manifest_paths = _default_tier_manifest_paths(paths, tier_names or DEFAULT_TIER_NAMES)
+        train_examples = build_sft_examples(str(genuine_manifest), tier_manifest_paths, split="train")
     logger.info(f"Built {len(train_examples)} SFT training examples "
                 f"(environment={training_config['environment']})")
 
     if training_config["environment"] == "local":
         logger.info("environment=local: stopping after data construction — this machine cannot load "
                      "Qwen2.5-VL (see module docstring). Re-run with --environment kaggle for real training.")
-        return
+        return None
 
     from transformers import Trainer, TrainingArguments
 
-    model, processor = load_model_for_training(model_config)
+    model, processor = load_model_for_training(model_config, resume_from_adapter=resume_from_adapter)
     sft_cfg = training_config["sft"]
 
     class SFTDataset:
@@ -285,7 +384,7 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         return inputs
 
     training_args = TrainingArguments(
-        output_dir=str(paths["checkpoint_root"] / "sft"),
+        output_dir=str(paths["checkpoint_root"] / checkpoint_subdir),
         per_device_train_batch_size=sft_cfg["per_device_train_batch_size"],
         gradient_accumulation_steps=sft_cfg["gradient_accumulation_steps"],
         learning_rate=sft_cfg["learning_rate"],
@@ -318,7 +417,9 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
     trainer = Trainer(model=model, args=training_args, train_dataset=SFTDataset(train_examples),
                        data_collator=collate)
     trainer.train()
-    trainer.save_model(str(paths["checkpoint_root"] / "sft" / "final"))
+    final_dir = str(paths["checkpoint_root"] / checkpoint_subdir / "final")
+    trainer.save_model(final_dir)
+    return final_dir
 
 
 def main() -> None:

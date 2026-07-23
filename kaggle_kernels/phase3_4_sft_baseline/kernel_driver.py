@@ -32,9 +32,25 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 # Kaggle's base image doesn't have a new enough transformers for Qwen2.5-VL,
 # or qwen_vl_utils at all.
+#
+# Pinned to exact versions instead of "-U" (unbounded upgrade), found
+# necessary after checking current PyPI state mid-debugging: unpinned
+# transformers now resolves to 5.14.1, a major-version jump past the 4.x
+# line this project was built and tested against (requirements.txt requires
+# >=4.49.0, the first release with Qwen2.5-VL support, with no ceiling).
+# Every kernel push in this whole debugging saga (v8-v16) used "-U", so the
+# exact transformers/peft/accelerate/bitsandbytes versions could have
+# silently drifted between runs without ever being controlled for or
+# recorded -- pinning here removes that as an uncontrolled variable in this
+# and every future test. 4.57.6 is the latest release still on the 4.x line
+# (deliberately not jumping to 5.x in the same change that's also testing the
+# device_map fix); qwen-vl-utils/peft/accelerate/bitsandbytes pinned to
+# whatever was current on PyPI when this was written, no version-jump
+# concern found for those three.
 subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q", "-U",
-     "transformers>=4.49.0", "qwen-vl-utils", "peft", "accelerate", "bitsandbytes"],
+    [sys.executable, "-m", "pip", "install", "-q",
+     "transformers==4.57.6", "qwen-vl-utils==0.0.14", "peft==0.19.1",
+     "accelerate==1.14.0", "bitsandbytes==0.49.2"],
     check=True,
 )
 

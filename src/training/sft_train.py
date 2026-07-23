@@ -154,8 +154,21 @@ def load_model_for_training(model_config: dict):
     )
     model_cfg = model_config["model"]
     processor = AutoProcessor.from_pretrained(model_cfg["name"], trust_remote_code=model_cfg["trust_remote_code"])
+    # device_map={"": 0} instead of "auto": every prior run (v8-v16) used "auto"
+    # and every hang (v11-v14, v16) happened only when gradient checkpointing
+    # was enabled, in either mode -- and every traceback in this whole saga,
+    # including the successful-diagnosis OOM crashes (v9/v10), shows
+    # accelerate/hooks.py's hooked forward wrapper in the call stack.
+    # Checkpointing's recompute step re-enters the forward pass during
+    # backward, which has to pass back through that hook -- a known class of
+    # interaction issue between accelerate's multi-device dispatch hooks and
+    # checkpointing recomputation. We only ever have one GPU, so "auto"'s
+    # dispatch logic (and its hooks) buys nothing here; pinning explicitly to
+    # device 0 removes the one variable never changed across 5 failed
+    # hypotheses, without giving up checkpointing's memory savings the way
+    # the v15 diagnostic did.
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_cfg["name"], quantization_config=bnb_config, device_map="auto",
+        model_cfg["name"], quantization_config=bnb_config, device_map={"": 0},
         trust_remote_code=model_cfg["trust_remote_code"],
     )
     # v15 (gradient checkpointing disabled entirely) ruled itself out: it hit a

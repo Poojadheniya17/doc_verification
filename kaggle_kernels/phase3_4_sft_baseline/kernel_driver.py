@@ -12,9 +12,23 @@ comes from the genuinely untouched base model, not a model that's already
 seen any training step.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Must be set before torch's CUDA allocator initializes (i.e. before torch is
+# imported at all, transitively or otherwise) — found necessary after kernel
+# version 9 (image-resize + paged-optimizer fix) got all the way through the
+# forward pass and OOM'd in the backward pass instead, needing 1.7GB more with
+# only 1.1GB free. The error message itself flagged "reserved but unallocated
+# memory is large" (fragmentation), which expandable_segments directly
+# targets — zero accuracy cost, unlike shrinking image size or LoRA rank would
+# be. Setting both names since this torch build's own warning printed
+# "PYTORCH_ALLOC_CONF" but the classic CUDA-specific name is
+# "PYTORCH_CUDA_ALLOC_CONF" — harmless to set both.
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 # Kaggle's base image doesn't have a new enough transformers for Qwen2.5-VL,
 # or qwen_vl_utils at all.

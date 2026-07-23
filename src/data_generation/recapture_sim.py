@@ -69,7 +69,7 @@ def simulate_recapture(image_path: str, out_dir: str, seed: int | None = None) -
 
     return {
         "source_image": image_path,
-        "forged_image": str(dest),
+        "forged_image": dest.as_posix(),
         "tier": "tier5_recapture",
         "success": True,
         # No localized tamper_regions — the whole document is the "forgery" here,

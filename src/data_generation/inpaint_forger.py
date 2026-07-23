@@ -89,7 +89,7 @@ def run_inpainting(image_path: str, mask: np.ndarray, out_dir: str, prompt: str 
     out_path.mkdir(parents=True, exist_ok=True)
     dest = out_path / f"{unique_stem(image_path)}_tier3.jpg"
     result.save(dest, quality=95)
-    return {"source_image": image_path, "forged_image": str(dest), "tier": "tier3_inpainting", "success": True}
+    return {"source_image": image_path, "forged_image": dest.as_posix(), "tier": "tier3_inpainting", "success": True}
 
 
 def inpaint_region(image_path: str, out_dir: str, prompt: str = DEFAULT_PROMPT,

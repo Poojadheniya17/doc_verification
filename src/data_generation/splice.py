@@ -90,7 +90,7 @@ def splice_document(source_path: str, donor_path: str, out_dir: str, margin_frac
     return {
         "source_image": source_path,
         "donor_image": donor_path,
-        "forged_image": str(dest),
+        "forged_image": dest.as_posix(),
         "tier": "tier2_splicing",
         "success": True,
         "blend_method": blend_method,

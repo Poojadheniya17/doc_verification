@@ -379,6 +379,40 @@ def test_default_tier_manifest_paths_match_real_files_on_disk():
         assert Path(path).is_file(), f"{tier}'s derived manifest path does not exist on disk: {path}"
 
 
+def test_real_manifests_use_forward_slash_paths():
+    """Regression test for a real bug: this project's manifest-building
+    scripts (acquire_dataset.py, field_tamper.py, splice.py,
+    synthetic_id_gen.py, recapture_sim.py) originally serialized path fields
+    via bare str(some_path) — which produces OS-native (backslash) separators
+    on this Windows dev machine. Every image path resolved fine locally
+    (Windows accepts both slash styles) but broke with a hard
+    FileNotFoundError the moment a manifest with backslash paths reached a
+    real Linux Kaggle kernel. This had been silently true of every locally-
+    generated manifest (genuine + tier1/2/4/5 — tier3 was generated ON
+    Kaggle/Linux, so it happened to be fine) until it surfaced for real on a
+    leave-one-out/adversarial-rounds Kaggle run. Fixed at the source (each
+    generator now uses .as_posix()) and the existing manifests were
+    normalized in place — this test guards against the bug recurring.
+    """
+    manifest_paths = [
+        "data/processed/genuine_manifest_templates.json",
+        "data/synthetic_forgeries/tier1_field_tamper/tier1_manifest.json",
+        "data/synthetic_forgeries/tier2_splicing/tier2_manifest.json",
+        "data/synthetic_forgeries/tier3_inpainting/tier3_manifest.json",
+        "data/synthetic_forgeries/tier4_full_synthetic/tier4_manifest.json",
+        "data/synthetic_forgeries/tier5_recapture/tier5_manifest.json",
+    ]
+    path_keys = ("path", "source_image", "forged_image", "donor_face_image", "donor_image")
+    for manifest_path in manifest_paths:
+        if not Path(manifest_path).is_file():
+            continue  # not every tier is guaranteed generated in every environment
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        for entry in manifest["entries"]:
+            for key in path_keys:
+                if entry.get(key):
+                    assert "\\" not in entry[key], f"{manifest_path}: {key}={entry[key]!r} has a backslash path"
+
+
 def test_build_conversation_structure():
     conv = build_conversation("img.jpg", {"name": "A"})
     assert conv[0]["role"] == "user"

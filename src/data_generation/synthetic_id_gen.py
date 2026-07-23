@@ -135,7 +135,7 @@ def generate_synthetic_id(donor_face_path: str, out_dir: str, seed: int | None =
     }
     return {
         "donor_face_image": donor_face_path,
-        "forged_image": str(dest),
+        "forged_image": dest.as_posix(),
         "tier": "tier4_full_synthetic",
         "success": face is not None,
         "ground_truth": ground_truth,

@@ -138,7 +138,7 @@ def tamper_fields(image_path: str, manifest_entry: dict, out_dir: str, seed: int
 
     return {
         "source_image": image_path,
-        "forged_image": str(dest),
+        "forged_image": dest.as_posix(),
         "tier": "tier1_field_tamper",
         "document_code": manifest_entry.get("document_code"),
         "split": manifest_entry.get("split"),

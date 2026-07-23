@@ -215,7 +215,7 @@ def build_genuine_manifest(
     by_code: dict[str, list[str]] = {}
     for code_dir in sorted(images_dir.iterdir()) if images_dir.exists() else []:
         if code_dir.is_dir():
-            by_code[code_dir.name] = sorted(str(p) for p in code_dir.glob("*.jpg"))
+            by_code[code_dir.name] = sorted(p.as_posix() for p in code_dir.glob("*.jpg"))
 
     rng = random.Random(seed)
     entries = []

@@ -1,0 +1,40 @@
+{
+  "precisions": [
+    "fp16",
+    "int8",
+    "int4"
+  ],
+  "n_examples": 40,
+  "results": {
+    "fp16": {
+      "accuracy": {
+        "mean": 0.5,
+        "ci_low": 0.35,
+        "ci_high": 0.65,
+        "n": 40
+      },
+      "avg_latency_seconds": 8.68655569407503,
+      "estimated_cost_per_million_verifications_usd": 844.5262480350724
+    },
+    "int8": {
+      "accuracy": {
+        "mean": 0.5,
+        "ci_low": 0.35,
+        "ci_high": 0.65,
+        "n": 40
+      },
+      "avg_latency_seconds": 22.170931805575016,
+      "estimated_cost_per_million_verifications_usd": 2155.5072588753487
+    },
+    "int4": {
+      "accuracy": {
+        "mean": 0.5,
+        "ci_low": 0.35,
+        "ci_high": 0.65,
+        "n": 40
+      },
+      "avg_latency_seconds": 20.980795055049974,
+      "estimated_cost_per_million_verifications_usd": 2039.7995192409699
+    }
+  }
+}

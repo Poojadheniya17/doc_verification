@@ -379,17 +379,46 @@ analysis, including the direct connection to the training-loss plateau
 above, in Failure Analysis and in
 `results/tables/phase6_adversarial_rounds_summary.md`.
 
-### Quantization benchmarking (Phase 9) — **PENDING**
+### Quantization benchmarking (Phase 9, real Kaggle result, n=40/precision)
 
-The fp16/int8/int4 comparison Kaggle job hit a real, since-fixed library
-compatibility error (`peft`'s LoRA module dispatch tries a `torchao`
+The fp16/int8/int4 comparison job hit a real, since-fixed library
+compatibility error first (`peft`'s LoRA module dispatch tries a `torchao`
 backend candidate specifically for plain fp16 — non-quantized — models, and
 Kaggle's base image ships an incompatible `torchao==0.10.0`; `peft`'s own
 version gate raises rather than skipping cleanly on a too-old-but-present
 package). Fixed by uninstalling `torchao` entirely (this project only ever
-uses `bitsandbytes` for actual quantization) and re-pushed. Populated once
-real numbers are available — see the same PENDING convention as
-leave-one-out above.
+uses `bitsandbytes` for actual quantization) and re-pushed successfully.
+
+| Precision | Accuracy | 95% CI | Avg latency | Est. cost / 1M verifications |
+|---|---|---|---|---|
+| fp16 | 50.0% | [35.0%, 65.0%] | **8.69s** | **$845** |
+| int8 | 50.0% | [35.0%, 65.0%] | 22.17s | $2,156 |
+| int4 | 50.0% | [35.0%, 65.0%] | 20.98s | $2,040 |
+
+**Two real findings, both reported honestly:**
+
+1. **Accuracy is identical (exactly 50.0%) across all three precisions** —
+   not evidence that quantization is harmless, but the same single-class-
+   collapse pattern documented under Adversarial retraining rounds above,
+   showing up again on this run's perfectly balanced 20 genuine / 20
+   tampered eval set. A model that predicts one class for every input scores
+   exactly 50% on any balanced set regardless of numeric precision, since
+   precision changes numerical representation, not which class a collapsed
+   model defaults to. This is further, independent corroborating evidence
+   for the capacity-limitation hypothesis, not a new finding on its own.
+2. **fp16 measured both faster and cheaper than int8/int4** — 8.69s/example
+   vs. 22.17s and 20.98s, inverting the usual "quantize for speed/cost"
+   assumption. The honest, reasoned explanation: this benchmark runs at
+   batch size 1 (matching training), and `bitsandbytes` int8/int4 layers
+   carry real per-call dequantization overhead that a larger production
+   batch would amortize but a single-example batch cannot. **The honest
+   recommendation from this specific benchmark is fp16, not int8/int4** —
+   the opposite of conventional wisdom, stated plainly because that's what
+   was actually measured under these real conditions, not assumed from
+   general quantization lore. A production deployment with real request
+   batching would need to re-run this comparison before generalizing past
+   what was tested here. Full analysis:
+   `results/tables/phase9_quantization_bench_summary.md`.
 
 ## Failure Analysis
 
@@ -421,12 +450,41 @@ the task well, and this project's own adversarial-rounds evaluation is
 honest evidence that, at the compute-forced configuration this project
 landed on, the second claim is not yet supported.
 
-*(Leave-one-out results, once available, are the more statistically
-meaningful read on whether this pattern is a fundamental capacity
-limitation or specific to the adversarial-rounds' very small per-round
-retraining sets — each leave-one-out fold is a genuine ~719-example retrain
+**Independent corroboration**: the quantization benchmark (below) found the
+same v24 checkpoint scoring exactly 50.0% accuracy at all three tested
+precisions (fp16/int8/int4) on a separate, perfectly-balanced 40-example
+eval set — the same single-class-collapse signature (a model defaulting to
+one verdict scores exactly 50% on a balanced set regardless of numeric
+precision), observed independently of the adversarial-retraining process
+itself. This rules out "an artifact specific to the adversarial-rounds
+retraining loop" as the explanation and strengthens the case that v24's
+checkpoint itself, not the evaluation procedure, is the source of the
+degenerate behavior.
+
+**A direct test of the hypothesis was launched the same night** (v25):
+restoring LoRA rank (4→16), image size (256px→768px), and sequence length
+(1024→2048) toward their pre-panic values, now that the real cause of
+v19-v23's memory ceiling (the leftover-7B-model leak, not these
+hyperparameters) was found and fixed in v24. Real math motivating this:
+v23's OOM showed 14.36GiB in use at crash time; subtracting the confirmed
+~7.29GiB leak leaves 3B training's actual footprint at only ~7.07GiB against
+a ~14.56GiB budget — roughly 2x headroom was available the entire time
+v19-v23's search was running. If this hypothesis is correct, a checkpoint
+trained with meaningfully more capacity should show real image-content
+discrimination rather than single-class collapse. *(Result pending at the
+time of this section being written — see the top of this document / commit
+history for whether v25 completed and what its adversarial-rounds re-test
+showed. This is being reported honestly regardless of outcome: if restored
+capacity does NOT fix the collapse, that is equally important evidence,
+ruling out the capacity hypothesis and pointing at something else — e.g. the
+learning-rate schedule, the 719-example dataset's own diversity, or the
+tier1/tier2-only training composition.)*
+
+**Leave-one-out results**, once available, are a further, more statistically
+meaningful read on generalization specifically (as opposed to the capacity
+question above) — each leave-one-out fold is a genuine ~719-example retrain
 from the base model, not a 10-20-example perturbation. This section will be
-updated once those results are in.)*
+updated once those results are in.
 
 ## Limitations
 

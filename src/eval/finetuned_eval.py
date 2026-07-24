@@ -195,7 +195,14 @@ def score_prediction(example: dict, prediction: dict) -> dict:
 
     result = {"image_path": example["image_path"], "tier": example.get("tier"),
               "correct": correct, "predicted_verdict": predicted_verdict,
-              "parse_success": prediction["parse_success"]}
+              "parse_success": prediction["parse_success"],
+              # Full parsed output + confidence pass through too — LOO/adversarial-rounds
+              # only ever consumed "correct"/"predicted_verdict" for accuracy tracking, but
+              # a richer capture (e.g. for the demo app's example gallery) needs the full
+              # extraction fields, tamper_regions, explanation, and confidence, not just the
+              # binary verdict comparison. Cheap to include, nothing downstream breaks by
+              # ignoring the extra keys.
+              "parsed": prediction.get("parsed"), "confidence": prediction.get("confidence")}
     if "target" in example:
         result["target"] = example["target"]
     return result

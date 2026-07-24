@@ -31,6 +31,19 @@ subprocess.run(
      "accelerate==1.14.0", "bitsandbytes==0.49.2"],
     check=True,
 )
+# Kaggle's base image ships torchao==0.10.0. peft's LoRA module dispatch
+# tries dispatch_torchao as one of several candidate backends even for a
+# plain fp16 (non-torchao-quantized) model, and its own version gate
+# (is_torchao_available() in peft/import_utils.py) *raises* rather than
+# skipping when it finds an installed-but-too-old torchao ("Found an
+# incompatible version of torchao... only versions above 0.16.0 are
+# supported") — confirmed by reading that function's source: it only
+# returns False cleanly when torchao isn't installed at all, not when a
+# stale version is present. This project never uses torchao (bitsandbytes
+# is the only quantization backend used, for int8/int4; fp16 needs no
+# quantization backend at all), so uninstalling it entirely is the correct
+# fix, not pinning a newer version we have no other use for.
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "torchao"], check=False)
 
 candidates = [
     Path("/kaggle/input/doc-verification-data"),

@@ -1,0 +1,529 @@
+[
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/04.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Agron Albrup",
+      "dob": "21-03-1985",
+      "id_number": "807908701",
+      "address": null,
+      "expiry": "09-06-2028",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/54.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Bajram Dedej",
+      "dob": "01-02-1999",
+      "id_number": "400211657",
+      "address": null,
+      "expiry": "04-07-2026",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/75.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Delina Gecaj",
+      "dob": "18-05-1971",
+      "id_number": "209694597",
+      "address": null,
+      "expiry": "01-02-2029",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/11.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Albion Amiti",
+      "dob": "25-06-1974",
+      "id_number": "847259219",
+      "address": null,
+      "expiry": "05-03-2025",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/69.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Dardana Fazliu",
+      "dob": "24-03-2002",
+      "id_number": "687803894",
+      "address": null,
+      "expiry": "13-06-2025",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/86.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Doruntina Bushati",
+      "dob": "19-08-1952",
+      "id_number": "113966062",
+      "address": null,
+      "expiry": "29-07-2025",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/13.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Aleksio Bajraktari",
+      "dob": "08-12-1999",
+      "id_number": "079318707",
+      "address": null,
+      "expiry": "22-04-2027",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/17.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Alketa Bardhi",
+      "dob": "16-11-1972",
+      "id_number": "159776250",
+      "address": null,
+      "expiry": "31-01-2028",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/28.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Anxhela Boja",
+      "dob": "23-07-1998",
+      "id_number": "489950476",
+      "address": null,
+      "expiry": "13-10-2027",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/31.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "Ardian Brozi",
+      "dob": "11-10-1979",
+      "id_number": "085196111",
+      "address": null,
+      "expiry": "17-06-2027",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/42_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "ARMANDS SALMI\u0145\u0160",
+      "dob": "010776-99384",
+      "id_number": "LV3516240",
+      "address": null,
+      "expiry": "10.03.2029.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          1131,
+          679,
+          1529,
+          741
+        ],
+        [
+          1132,
+          864,
+          1738,
+          896
+        ]
+      ]
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/09_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "AIJA PRIEDE",
+      "dob": "03.05.1992.",
+      "id_number": "LV5586605",
+      "address": null,
+      "expiry": "18 . 07.2011",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          631,
+          921,
+          969,
+          983
+        ],
+        [
+          100,
+          1356,
+          2060,
+          1430
+        ]
+      ]
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier2_splicing/42_spliced_48_tier2.jpg",
+    "tier": "tier2_splicing",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "ARMANDS SALMI\u0145\u0160",
+      "dob": "14.07.1976.",
+      "id_number": "LV3516240",
+      "address": null,
+      "expiry": "10.03.2029.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          126,
+          506,
+          598,
+          978
+        ]
+      ]
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier2_splicing/09_spliced_95_tier2.jpg",
+    "tier": "tier2_splicing",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "AIJA PRIEDE",
+      "dob": "03.05.1992.",
+      "id_number": "LV5586605",
+      "address": null,
+      "expiry": "11.07.2021.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          132,
+          528,
+          575,
+          971
+        ]
+      ]
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier2_splicing/56_spliced_15_tier2.jpg",
+    "tier": "tier2_splicing",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "EL\u012aNA ZARI\u0145\u0160",
+      "dob": "21.02.1987.",
+      "id_number": "LV2670545",
+      "address": null,
+      "expiry": "09.10.2027.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          147,
+          504,
+          628,
+          985
+        ]
+      ]
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_PA0265774_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "JORDAN HARRIS",
+      "dob": "24.05.1970",
+      "id_number": "PA0265774",
+      "address": null,
+      "expiry": "04.11.2027",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_NO6989301_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "CASEY REYES",
+      "dob": "15.06.1997",
+      "id_number": "NO6989301",
+      "address": null,
+      "expiry": "20.08.2026",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_EN9634630_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false,
+    "target": {
+      "name": "JORDAN REYES",
+      "dob": "13.04.1973",
+      "id_number": "EN9634630",
+      "address": null,
+      "expiry": "19.01.2027",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_HD3706177_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "AVERY MYERS",
+      "dob": "09.02.1974",
+      "id_number": "HD3706177",
+      "address": null,
+      "expiry": "16.01.2027",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_AU6005237_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "AVERY HARRIS",
+      "dob": "19.10.1969",
+      "id_number": "AU6005237",
+      "address": null,
+      "expiry": "19.09.2026",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_UR9097708_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "JORDAN FOSTER",
+      "dob": "18.08.1991",
+      "id_number": "UR9097708",
+      "address": null,
+      "expiry": "13.07.2026",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_EU6427554_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "RILEY REYES",
+      "dob": "18.12.1989",
+      "id_number": "EU6427554",
+      "address": null,
+      "expiry": "23.07.2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_ET6586542_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "RILEY FOSTER",
+      "dob": "04.06.2003",
+      "id_number": "ET6586542",
+      "address": null,
+      "expiry": "22.01.2030",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_RC1893193_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false,
+    "target": {
+      "name": "CASEY SANDERS",
+      "dob": "21.04.1999",
+      "id_number": "RC1893193",
+      "address": null,
+      "expiry": "18.06.2029",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_PJ9498024_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false,
+    "target": {
+      "name": "MORGAN COOPER",
+      "dob": "27.04.1990",
+      "id_number": "PJ9498024",
+      "address": null,
+      "expiry": "15.12.2031",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_ZL0542146_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "ALEX MYERS",
+      "dob": "28.06.1981",
+      "id_number": "ZL0542146",
+      "address": null,
+      "expiry": "26.07.2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_WA1972713_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false,
+    "target": {
+      "name": "TAYLOR MYERS",
+      "dob": "17.12.1985",
+      "id_number": "WA1972713",
+      "address": null,
+      "expiry": "24.08.2026",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_WZ2247403_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "QUINN BAILEY",
+      "dob": "16.08.1979",
+      "id_number": "WZ2247403",
+      "address": null,
+      "expiry": "19.12.2032",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_OK4745660_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false,
+    "target": {
+      "name": "TAYLOR REYES",
+      "dob": "24.05.1960",
+      "id_number": "OK4745660",
+      "address": null,
+      "expiry": "03.06.2033",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_JB6927295_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "target": {
+      "name": "ALEX MYERS",
+      "dob": "21.09.1974",
+      "id_number": "JB6927295",
+      "address": null,
+      "expiry": "23.04.2027",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    }
+  }
+]

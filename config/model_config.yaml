@@ -100,7 +100,19 @@ model:
   # while fighting the wrong problem. 768px matches the pre-panic value from
   # the original 7B debugging chain (v12, see this file's top DECISION
   # comment) — a principled reference point, not an arbitrary new number.
-  max_image_size: 768
+  #
+  # v25 REAL RESULT (768px + r=16 + seq=2048, all restored at once): OOM'd —
+  # "Tried to allocate 44.00 MiB. GPU 0 has... 8.81 MiB free... this process
+  # has 14.55 GiB memory in use" (of a 14.56GiB budget). Confirmed via the
+  # trainable-param count (37.15M, up from r=4's 9.28M) that the rank
+  # restoration itself is cheap — the ~7.5GiB jump over v24's real ~7.07GiB
+  # footprint came almost entirely from image size and/or sequence length
+  # going up together. Backing off BOTH at once (single reasoned step,
+  # attempt 2/3 on this thread) rather than isolating one variable at a time
+  # — time-boxed, not a full grid search: 384px (still 1.5x v24's 256px
+  # floor) + max_seq_length 1536 (see training_config.yaml, still 1.5x v24's
+  # 1024). LoRA r=16 kept unchanged — confirmed cheap, no reason to cut it.
+  max_image_size: 384
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.

@@ -89,11 +89,18 @@ print(f"=== Built fixed eval set: {len(EVAL_SET)} examples "
       f"({sum(1 for e in EVAL_SET if e['tier'] == 'genuine')} genuine, "
       f"{sum(1 for e in EVAL_SET if e['tier'] != 'genuine')} tampered) ===", flush=True)
 
-PHASE4_CHECKPOINT = str(INPUT_ROOT / "checkpoints" / "sft_v24_final")
+# Round 0 baseline: v25 (LoRA r=16, capacity-restoration run — see
+# results/tables/phase4_sft_summary.md's "v25" section), not v24 (r=4).
+# This specific push tests whether v25's extra capacity alone changes the
+# single-class collapse seen against v24 in this same script — v25 was
+# trained on the identical tier1+tier2, 719-example, ~35:1-imbalanced data
+# as v24, so this isolates capacity from the (separate, not-yet-tested)
+# class-imbalance hypothesis.
+PHASE4_CHECKPOINT = str(INPUT_ROOT / "checkpoints" / "sft_v25_final")
 if not (Path(PHASE4_CHECKPOINT) / "adapter_model.safetensors").is_file():
-    raise RuntimeError(f"Expected Phase 4's committed checkpoint at {PHASE4_CHECKPOINT} — "
-                        f"check that checkpoints/sft_v24_final is included in the mounted dataset.")
-print(f"=== Round 0 baseline checkpoint: {PHASE4_CHECKPOINT} ===", flush=True)
+    raise RuntimeError(f"Expected the v25 checkpoint at {PHASE4_CHECKPOINT} — "
+                        f"check that checkpoints/sft_v25_final is included in the mounted dataset.")
+print(f"=== Round 0 baseline checkpoint: {PHASE4_CHECKPOINT} (v25, LoRA r=16) ===", flush=True)
 
 RESULTS_DIR = Path("/kaggle/working/results")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)

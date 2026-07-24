@@ -35,6 +35,20 @@ checkpoints/*
 !checkpoints/sft_v24_final/adapter_model.safetensors
 !checkpoints/sft_v24_final/README.md
 
+# v25 (r=16 capacity-restoration run, real result documented in
+# results/tables/phase4_sft_summary.md) — UNLIKE v24, this adapter's
+# safetensors file is 141.8MB, over GitHub's hard 100MB per-file push limit
+# (r=16 roughly quadruples trainable params vs v24's r=4: 37.15M vs 9.29M).
+# No Git LFS is set up in this repo, and adding one now for a single
+# portfolio checkpoint isn't worth the infra complexity — so only the small
+# metadata (config + README) is versioned here; the real weights live in the
+# Kaggle kernel output (poojadheniya/doc-verification-zero-shot-baseline-sft-qlora,
+# kernel version 9) and this dev machine's local disk. A deliberate, documented
+# scoping decision, not an oversight.
+!checkpoints/sft_v25_final/
+!checkpoints/sft_v25_final/adapter_config.json
+!checkpoints/sft_v25_final/README.md
+
 # Local Hugging Face model cache (multi-GB; re-downloaded via snapshot_download, not committed)
 .hf_cache/
 

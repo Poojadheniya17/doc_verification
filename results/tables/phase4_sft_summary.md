@@ -272,3 +272,113 @@ have found. That is worth stating plainly in the final paper: the fix was
 not a bigger model, more VRAM, or a cleverer LoRA config — it was a basic
 resource-management bug (a cached global reference outliving its scope)
 that had nothing to do with any of the levers being tuned.
+
+## v25: capacity restoration — a real success, and a real unresolved anomaly
+
+With the true root cause of v19-v23's ceiling understood (leftover 7B model,
+not insufficient 3B capacity), LoRA rank/image size/sequence length were
+restored toward pre-panic values, motivated by real math: v23's OOM showed
+14.36GiB in use at crash; subtracting the confirmed ~7.29GiB leak leaves 3B
+training's actual footprint at only ~7.07GiB against a ~14.56GiB budget —
+roughly 2x headroom was available the whole time v19-v23's search ran.
+
+**Three attempts at r=16, each OOM'ing with byte-identical numbers**, are
+documented in `writeup/project_report.md`'s Failure Analysis (768px/seq=2048,
+384px/seq=1536, and an isolated-rank retry at 256px/seq=1536 — all three:
+44.00 MiB requested, 8.81 MiB free, 14.55 GiB total in use, verified via a
+diagnostic kernel to rule out a stale-config artifact). This was written up
+as "conclusively attributing the cause to LoRA rank r=16 itself."
+
+**A fourth push (intended to be the safe, final r=8/512px/seq=2048 config)
+was, due to a real process error, actually a fourth r=16 attempt — and this
+one succeeded.** The mistake: `kaggle datasets status` was checked and
+reported "ready" before the r=8 dataset push had actually finished
+propagating to a freshly-started kernel's mount (a real, previously-observed
+Kaggle infrastructure quirk — see PROJECT_STATUS.md). The kernel
+(`poojadheniya/doc-verification-zero-shot-baseline-sft-qlora`, kernel version
+9) started training against the **stale, pre-push r=16 config** — confirmed
+beyond doubt by two independent pieces of ground truth, not inference:
+
+- Trainable-param count at training start: `37,152,768` (matches r=16
+  exactly; r=8 would show ~18.5M).
+- The saved checkpoint's real `adapter_config.json`: `"r": 16, "lora_alpha":
+  32` — read directly from the downloaded Kaggle output, not assumed.
+
+**This run completed all 135/135 steps, all 3 epochs, no crash:**
+
+```
+{'train_runtime': 8397.8802, 'train_samples_per_second': 0.257,
+ 'train_steps_per_second': 0.016, 'train_loss': 1.5124582361291956, 'epoch': 3.0}
+=== Phase 4 peak GPU memory (this training run only, Phase 3's usage excluded):
+10.17 GB allocated, 10.51 GB reserved ===
+```
+
+- Total wall-clock: 8398 seconds (~2h20m) — comparable to v24's 2h13m.
+- Loss trajectory: 4.39 (0.22) → 1.77 (0.45) → 1.31 (0.67) → 1.28 (0.89) →
+  1.25 (1.11) → 1.24 (1.33) → 1.24 (1.56) → 1.23 (1.78) → 1.22 (2.00) → 1.22
+  (2.22) → 1.22 (2.45) → 1.22 (2.67) → plateaus at **~1.217-1.220** for the
+  last two epochs — genuinely **lower** than v24's r=4 plateau (~1.25-1.26).
+  Real evidence the restored capacity (r=16 vs r=4) let the model fit the
+  training data measurably better, independent of the generalization
+  question tested next via adversarial-rounds.
+- Peak GPU memory (10.17GB allocated / 10.51GB reserved) is a real,
+  **directly-measured** number from this run's own diagnostic print — **not
+  an inference**. It sits comfortably ~4GB below the ~14.5GiB ceiling that
+  killed 3 prior r=16 attempts at the exact same rank.
+
+**The honest, unresolved contradiction, stated plainly:** the same LoRA rank
+(r=16), on the same base model, same library versions, same Kaggle T4 tier,
+failed identically three times and then succeeded with a ~4GB safety margin
+on the fourth attempt. This project's own Failure Analysis previously stated
+r=16 was "conclusively" isolated as the cause of catastrophic memory growth —
+that conclusion must be walked back to **not proven**, given this direct
+counterexample. At the same time, three prior byte-identical failures are
+also real data — this is not proof r=16 is now safe or reliable either. Both
+facts are true simultaneously and both are reported here, rather than
+resolving the tension by picking whichever conclusion is more convenient.
+
+**What could not be determined, labeled honestly as a real information
+gap:** `kernel_driver.py`'s Phase 4 logging does not print `max_image_size`
+or `max_seq_length` directly, so — unlike LoRA rank, which is verified via
+`adapter_config.json` — this run's actual image size / sequence length
+cannot be confirmed from any saved artifact. The three failed r=16 attempts
+already demonstrated that varying image size (768→384→256px) and sequence
+length (2048→1536) made **no measurable difference** to their identical OOM
+point, which argues against those two variables being the reconciling factor
+here either. The best-supported honest explanations, in order of plausibility,
+given the evidence available:
+
+1. **Real Kaggle infrastructure/session variance** — a different underlying
+   GPU instance, driver memory overhead, or session freshness (this kernel
+   was deleted and re-pushed fresh partway through this investigation per
+   PROJECT_STATUS.md's documented recovery procedure for
+   "Maximum batch GPU session count reached" errors) — plausible given the
+   3 failures were closely spaced in time/session state and this success came
+   after an intervening delete+repush, but not verifiable after the fact.
+2. **An unidentified config or environment difference** introduced by the
+   dataset mid-propagation state itself — possible but unproven, since the
+   demonstrated insensitivity of the 3 failures to image_size/seq_length
+   argues against those specific values being the answer.
+
+Neither explanation is confirmed. This is reported as a genuine open
+question, per this project's standing rule against papering over
+inconvenient or confusing real results.
+
+**Checkpoint:** `checkpoints/sft_v25_final/` (adapter, r=16). Unlike v24's
+36MB checkpoint, this adapter's `adapter_model.safetensors` is **141.8MB —
+over GitHub's 100MB hard per-file push limit** (r=16 roughly quadruples
+trainable params vs v24's r=4: 37.15M vs 9.29M). No Git LFS is set up in
+this repo, and standing one up for a single file wasn't judged worth the
+added complexity — so only the small metadata (`adapter_config.json`,
+`README.md`) is committed to git; the real weights live in the Kaggle
+kernel output (kernel version 9) and this dev machine's local disk. A
+documented scoping decision, not an oversight.
+
+**Real, important scope note on this run's training data:** this run used
+the exact same 719-example, tier1+tier2-only composition as v24 (700
+genuine + 8 tier1 + 11 tier2 — confirmed via the log's "Built 719 SFT
+training examples" line, identical to v24's). It did **not** test the
+class-imbalance hypothesis — it tests capacity in isolation, holding the
+same severe (~35:1) class imbalance constant. The next real test
+(adversarial-rounds against this checkpoint) answers: does more capacity
+alone fix the single-class collapse, or does the same imbalance still win?

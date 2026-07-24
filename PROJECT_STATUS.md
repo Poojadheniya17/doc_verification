@@ -10,12 +10,21 @@ tampered imbalance per fold) is a third independent confirmation of the
 collapse (alongside adversarial-rounds and quantization-bench) and points
 strongly at **class imbalance as the dominant cause, not just capacity/LoRA
 rank**. Agreed plan, explicitly requested by the user:
-1. Let the currently-running v25 kernel (testing restored LoRA
-   rank/image-size/seq-length capacity) finish — do NOT start any new
-   training run before this.
-2. Verify its real config via the saved `adapter_config.json` (ground truth
-   for r/alpha — the trainable-param count already suggests r=16, still
-   unconfirmed pending the actual file) and report the real result honestly.
+1. ~~Let the currently-running v25 kernel finish~~ — **DONE.** Completed
+   successfully: 135/135 steps, 3 epochs, no crash. Real, verified via the
+   saved `adapter_config.json`: **r=16, lora_alpha=32** (this was actually a
+   stale-config re-run of an r=16 attempt, due to a real dataset-propagation-
+   lag process error — see `results/tables/phase4_sft_summary.md`'s "v25"
+   section for the full honest account). Peak GPU memory 10.17GB
+   allocated/10.51GB reserved — a real ~4GB margin under the ~14.5GiB
+   ceiling that killed 3 prior identical r=16 attempts. **This directly
+   contradicts this project's own earlier "conclusively isolated r=16 as
+   broken" claim** — walked back honestly in both `phase4_sft_summary.md`
+   and `writeup/project_report.md` to "unresolved anomaly, not proven either
+   way." Checkpoint saved as `checkpoints/sft_v25_final/` — metadata only
+   committed to git (safetensors is 141.8MB, over GitHub's 100MB limit; real
+   weights live in Kaggle kernel output + local disk).
+2. ~~Verify its real config~~ — **DONE**, see above.
 3. **Next single test after that (not started yet): class-balanced
    training** — either oversampling tampered examples, undersampling
    genuine examples, or a class-weighted loss — so the model can no longer

@@ -500,28 +500,69 @@ seq=1536) OOM'd with **byte-for-byte identical memory numbers** — same
 via a diagnostic kernel to rule out a stale-config artifact). Attempt 3
 isolated LoRA rank alone (reverting image size/sequence length to v24's
 proven floor) and produced the **same identical failure a third time**,
-conclusively attributing the cause to LoRA rank r=16 itself. A web search
-for a documented bitsandbytes/peft mechanism explaining this did not surface
-a definitive answer for this exact library-version combination; rather than
-keep guessing, this project's own already-collected v19-v22 data (predating
-the leak's discovery) was re-examined through the now-understood lens: image
-sizes 256-512px at LoRA rank 4 *or* 8 all show real footprints in a tight
-~6.7-7.3GiB band, meaning **the discontinuity is specifically between r=8
-and r=16**, not a gradual scaling curve — real, if incomplete, evidence,
-not a resolved mechanism. *(The final, evidence-based attempt — r=8,
-512px, seq=2048 — was pushed based on this reasoning; see the top of this
-document / `phase4_sft_summary.md` / commit history for its real outcome,
-reported honestly regardless of result.)*
+which this document originally described as "conclusively attributing the
+cause to LoRA rank r=16 itself." **That conclusion has since been
+overturned by a fourth, real data point — reported honestly below, since
+it directly contradicts what was just written.**
 
-**Whatever v25's outcome, the leave-one-out result above already implies a
-real limit on what capacity restoration alone can fix**: even a
-higher-capacity checkpoint trained on the same ~6-8%-tampered class balance
-has every incentive to collapse to the same majority-class shortcut. The
-most concrete, evidence-backed next step this project's own data points to
-is addressing the class imbalance directly (oversampling forgery examples,
-a weighted loss, or a substantially larger and more balanced forgery
-dataset per tier) — ahead of further capacity tuning, which this session's
-evidence suggests is necessary but likely not sufficient on its own.
+**A fourth push, intended as the safe final config (r=8, 512px, seq=2048),
+actually ran with the stale r=16 config due to a real process error** — a
+Kaggle dataset-propagation-lag quirk (reported "ready" before a freshly
+started kernel's mount actually reflected the update, previously observed
+elsewhere in this project too — see `PROJECT_STATUS.md`). **This run
+completed successfully: 135/135 steps, all 3 epochs, no crash, peak GPU
+memory 10.17GB allocated / 10.51GB reserved** (kernel version 9,
+`train_runtime`: 8398s, `train_loss`: 1.5125) — a ~4GB safety margin under
+the ~14.5GiB ceiling that killed the previous 3 r=16 attempts. This is not
+inference: the run used LoRA rank 16, confirmed two independent ways — the
+trainable-param count at training start (37,152,768, matching r=16 exactly)
+and, definitively, the saved checkpoint's real `adapter_config.json`
+(`"r": 16, "lora_alpha": 32`, read directly from the downloaded Kaggle
+output).
+
+**The honest position, stated plainly: this project's own "conclusive"
+isolation of r=16 as broken was wrong, or at least incomplete.** The same
+rank, same base model, same library versions, same T4 tier failed
+identically three times and then succeeded with real margin to spare on a
+fourth attempt. Three byte-identical failures are real evidence; one clean
+success is also real evidence; both are true at once, and resolving that
+tension in either direction (r=16 is broken / r=16 is fine) would overstate
+what's actually known. The exact reconciling mechanism was not found — the
+log doesn't record this run's actual image_size/max_seq_length (unlike LoRA
+rank, not verifiable from any saved artifact), and the 3 failed attempts
+already showed image size and sequence length changes made no measurable
+difference to their identical OOM point, arguing against those variables
+being the answer here either. The best-supported honest explanation is real
+Kaggle infrastructure/session variance (this kernel had been deleted and
+freshly re-pushed partway through the investigation, a documented recovery
+step for a separate "max GPU sessions" error) rather than a deterministic,
+reproducible code-level cause — but this is stated as the *most plausible*
+explanation, not a confirmed one. See `phase4_sft_summary.md`'s "v25"
+section for the full real numbers and reasoning.
+
+**A genuine positive finding from this run, independent of the memory
+anomaly**: its training-loss plateau (~1.217-1.220 across epochs 2-3) is
+measurably lower than v24's r=4 plateau (~1.25-1.26) — real evidence the
+restored capacity (r=16) let the model fit the training data better. This
+run used the **same tier1+tier2-only, 719-example composition as v24**
+(confirmed via the log), so it does not yet test the class-imbalance
+hypothesis below — it isolates capacity alone, holding the same severe
+class imbalance constant. Whether that extra capacity also resolves the
+single-class collapse (as opposed to just lowering training loss) is a
+separate, real question, tested next via adversarial-rounds against this
+checkpoint.
+
+**Whatever that result turns out to be, the leave-one-out result above
+already implies a real limit on what capacity restoration alone can fix**:
+even a higher-capacity checkpoint trained on the same ~6-8%-tampered class
+balance has every incentive to collapse to the same majority-class
+shortcut. The most concrete, evidence-backed next step this project's own
+data points to is addressing the class imbalance directly (oversampling
+forgery examples, a weighted loss, or a substantially larger and more
+balanced forgery dataset per tier) — ahead of further capacity tuning,
+which this session's evidence suggests is necessary but likely not
+sufficient on its own. This is the next real experiment this project runs
+(see the section below on class-balanced training).
 
 ## Limitations
 
@@ -546,9 +587,11 @@ evidence suggests is necessary but likely not sufficient on its own.
   disabled (v24's configuration) are all the product of an extensive Kaggle
   free-tier T4 memory fight (see *Engineering Journey*), not values
   independently judged optimal for this task. A later attempt to restore
-  capacity (v25) surfaced a genuinely unresolved anomaly (LoRA rank r=16
-  causing catastrophic, non-linear memory growth on this exact library
-  combination) — documented honestly as an open question, not a solved one.
+  capacity (v25) succeeded for real at LoRA r=16 (verified via the saved
+  `adapter_config.json`, peak memory 10.51GB reserved) after three prior
+  identical-config attempts had OOM'd — a genuinely unresolved anomaly
+  (same rank, three failures then a clean success) documented honestly as
+  an open question, not a solved one, in Failure Analysis above.
 - **Small real sample sizes for two of three eval procedures.** The
   zero-shot baseline (n=9) and adversarial-rounds/quantization eval sets
   (n=30-40) carry wide bootstrap confidence intervals. Leave-one-out (n=68
@@ -584,11 +627,13 @@ evidence suggests is necessary but likely not sufficient on its own.
   leave-one-out result is real evidence this matters more than capacity
   alone: a higher-capacity model trained on the same imbalance has every
   incentive to collapse to the same majority-class shortcut.
-- **Resolve the v25 memory anomaly**: understand why LoRA rank r=16
-  specifically (not a gradual function of rank) causes catastrophic,
-  non-linear GPU memory growth on this exact bitsandbytes/peft/transformers
-  version combination — documented honestly in Failure Analysis as an
-  open question this session's real investigation could not fully resolve.
+- **Resolve the v25 memory anomaly**: understand why LoRA rank r=16 OOM'd
+  identically three times and then completed successfully with a real ~4GB
+  margin on a fourth attempt, on the same base model/library versions/T4
+  tier — documented honestly in Failure Analysis as an open question this
+  session's real investigation could not fully resolve (best-supported
+  explanation: Kaggle infrastructure/session variance, not a confirmed
+  deterministic mechanism).
 - **Re-run SFT at a higher LoRA rank and/or a larger, better-balanced
   training set** once more compute budget is available (a paid Kaggle tier,
   or a different provider) — informed by both findings above, not capacity

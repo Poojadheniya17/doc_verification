@@ -101,18 +101,37 @@ model:
   # the original 7B debugging chain (v12, see this file's top DECISION
   # comment) — a principled reference point, not an arbitrary new number.
   #
-  # v25 REAL RESULT (768px + r=16 + seq=2048, all restored at once): OOM'd —
-  # "Tried to allocate 44.00 MiB. GPU 0 has... 8.81 MiB free... this process
-  # has 14.55 GiB memory in use" (of a 14.56GiB budget). Confirmed via the
-  # trainable-param count (37.15M, up from r=4's 9.28M) that the rank
-  # restoration itself is cheap — the ~7.5GiB jump over v24's real ~7.07GiB
-  # footprint came almost entirely from image size and/or sequence length
-  # going up together. Backing off BOTH at once (single reasoned step,
-  # attempt 2/3 on this thread) rather than isolating one variable at a time
-  # — time-boxed, not a full grid search: 384px (still 1.5x v24's 256px
-  # floor) + max_seq_length 1536 (see training_config.yaml, still 1.5x v24's
-  # 1024). LoRA r=16 kept unchanged — confirmed cheap, no reason to cut it.
-  max_image_size: 384
+  # v25 REAL RESULT, attempt 1 (768px + r=16 + seq=2048, all restored at
+  # once): OOM'd — "Tried to allocate 44.00 MiB... 8.81 MiB free... this
+  # process has 14.55 GiB memory in use" (of 14.56GiB).
+  #
+  # v25 REAL RESULT, attempt 2 (384px + r=16 + seq=1536, moderate step-down):
+  # OOM'd with the EXACT SAME numbers, byte for byte — same 44.00 MiB
+  # requested, same 8.81 MiB free, same 14.55 GiB in use, same 14.23 GiB
+  # PyTorch-allocated, same 190.79 MiB reserved-unallocated. Verified this
+  # wasn't a stale-config/mount-lag artifact via the diagnostic kernel
+  # (confirmed the mounted config genuinely had max_image_size=384,
+  # max_seq_length=1536, lora.r=16 at the time attempt 2 ran). A 4x pixel-area
+  # cut (768px->384px) and a 25% sequence-length cut producing IDENTICAL
+  # memory usage down to the byte is real evidence that image size and
+  # sequence length are NOT the dominant memory driver here — contradicting
+  # this file's own earlier reasoning. Trainable-param math (37.15M at r=16
+  # vs 9.28M at r=4, a ~28M-parameter difference) suggests LoRA rank alone
+  # should cost only ~150-200MB more in weights+gradients+8bit-optimizer-state
+  # — nowhere near the observed ~7.5GiB jump over v24's real ~7.07GiB
+  # footprint at r=4. This contradiction is itself the finding: something
+  # about r=16 specifically (interacting with bitsandbytes 4-bit dequant for
+  # the LoRA forward/backward, or peft's per-module state at this rank) is
+  # far more expensive than naive parameter-counting predicts, OR the
+  # image-size config genuinely isn't reaching the vision-token pipeline the
+  # way this project assumed (e.g. qwen_vl_utils' own internal resolution
+  # handling in process_vision_info() overriding the PIL thumbnail already
+  # applied). Attempt 3 (final, capped budget) isolates the variable
+  # directly: reverted to v24's PROVEN-SAFE 256px floor here, with ONLY
+  # lora.r changed (still 16) — a clean single-variable test of whether rank
+  # alone is survivable, since the combined attempts couldn't distinguish
+  # which lever was responsible.
+  max_image_size: 256
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.

@@ -69,4 +69,15 @@ for mf in manifest_files:
     print(f"{mf.name}: {len(d.get('entries', []))} entries, backslash paths={bad}", flush=True)
 print(f"=== Total backslash path occurrences across all manifests: {total_backslash} (expect 0) ===", flush=True)
 
+print("=== model_config.yaml / training_config.yaml key values (mount-lag check) ===", flush=True)
+import yaml  # noqa: E402
+
+with open(INPUT_ROOT / "config" / "model_config.yaml", encoding="utf-8") as f:
+    _mc = yaml.safe_load(f)
+with open(INPUT_ROOT / "config" / "training_config.yaml", encoding="utf-8") as f:
+    _tc = yaml.safe_load(f)
+print(f"model_config.yaml: max_image_size={_mc['model']['max_image_size']}, "
+      f"lora.r={_mc['lora']['r']}, lora.alpha={_mc['lora']['alpha']}", flush=True)
+print(f"training_config.yaml: sft.max_seq_length={_tc['sft']['max_seq_length']}", flush=True)
+
 print("Done.", flush=True)

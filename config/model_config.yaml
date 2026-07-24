@@ -85,7 +85,22 @@ model:
   # reliably beats a sharper image the training can't reliably run on — but
   # it is a real, non-free cost to extraction accuracy that the clean-eval
   # numbers must be read in light of.
-  max_image_size: 256               # px, longer side — bounded step-down FLOOR attempt 4/4 (512->384->320->256); 320 OOM'd short by ~163MiB (594MiB needed, 430.81MiB free, 14.14GiB in use — not monotonic vs 384's 14.03GiB, but not being investigated per explicit user call). 256 is the floor: below this, field-extraction accuracy would be too degraded to be meaningful, and a failure here means stopping to rethink rather than cutting further.
+  # v25 DECISION (2026-07-24, overnight session): restored to 768px, up from
+  # the 256px floor v19-v23 were forced to. Real math, not a guess: v23's OOM
+  # traceback showed this process using 14.36GiB total at crash time; v24's
+  # real before/after GPU diagnostic later proved ~7.29GiB of that was a
+  # LEFTOVER 7B MODEL never freed between phases, not 3B training's own
+  # footprint. 3B's real footprint at 256px/r=4 was therefore only
+  # ~14.36 - 7.29 = ~7.07GiB against a ~14.56GiB budget — the entire v19-v23
+  # search was fighting a ceiling that was already ~2x lower than the real
+  # one, once the actual leak (fixed in v24, kept fixed here) is accounted
+  # for. Restoring image size (and LoRA rank, below) to test whether the
+  # adversarial-rounds single-class-collapse finding was a genuine model-
+  # capacity limitation or an artifact of unnecessarily aggressive cuts made
+  # while fighting the wrong problem. 768px matches the pre-panic value from
+  # the original 7B debugging chain (v12, see this file's top DECISION
+  # comment) — a principled reference point, not an arbitrary new number.
+  max_image_size: 768
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.
@@ -98,23 +113,23 @@ quantization:
   bnb_4bit_use_double_quant: true
 
 lora:
-  # r=16 -> r=12 -> r=8 -> r=4 (alpha kept at 2x r throughout, so LoRA's
-  # effective scaling is unchanged at every step). r=12 didn't OOM but
-  # stalled; r=8 + the v19-v22 bounded image-size search (512->384->320->256px,
-  # checkpointing off) OOM'd on all 4 attempts, closest miss ~19MiB short at
-  # the 256px floor (see results/tables/phase4_sft_summary.md and
-  # PROJECT_STATUS.md for the full table). Re-enabling checkpointing was
-  # considered but rejected: that exact config (use_reentrant=False +
-  # explicit use_cache=False) was already run on 3B in kernel v16 and hung —
-  # not an untested gap, a known-bad combination. r=4 is pushed as v23,
-  # combined with training_config.yaml's max_seq_length cut (2048->1024),
-  # as two genuinely new memory levers rather than another image-size step.
-  # r=4 is the floor before the adapter likely becomes too low-capacity to
-  # learn the task meaningfully; if v23 still OOMs, that's the signal to stop
-  # cutting quality knobs and treat this as a structural T4-capacity decision
-  # instead.
-  r: 4
-  alpha: 8
+  # r=16 -> r=12 -> r=8 -> r=4 (v19-v23) -> r=16 (v25, this change).
+  # The v19-v23 cuts (down to r=4) were made while fighting a memory ceiling
+  # that turned out to be ~7.29GiB too low, caused by a leftover 7B model
+  # never freed between Kaggle-session phases (found and fixed in v24 — see
+  # this file's max_image_size comment for the exact numbers). LoRA rank
+  # costs very little memory regardless of value in the 4-64 range (r=4's
+  # confirmed real trainable-param count was 9.28M of 3.76B total, 0.2468%;
+  # r=16 is still under 40M, a rounding error in GPU memory terms compared to
+  # activation/image memory) — the r=4 floor was never actually re-validated
+  # as necessary once the real leak was fixed. Restored to r=16, the original
+  # pre-panic value from the 7B debugging chain (this file's top DECISION
+  # comment), specifically to test whether the adversarial-rounds single-
+  # class-collapse finding (results/tables/phase6_adversarial_rounds_summary.md)
+  # was a genuine capacity limitation or an artifact of r=4 being
+  # unnecessarily constrained. alpha kept at 2x r as throughout this project.
+  r: 16
+  alpha: 32
   dropout: 0.05
   target_modules:
     - "q_proj"

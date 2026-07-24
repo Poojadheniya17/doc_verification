@@ -176,6 +176,14 @@ unload_clean_eval_model()
 print(f"=== GPU memory after Phase 3 cleanup: "
       f"{torch.cuda.memory_allocated() / 1e9:.2f} GB allocated, "
       f"{torch.cuda.memory_reserved() / 1e9:.2f} GB reserved ===", flush=True)
+# v25: restored max_image_size/lora.r/max_seq_length toward their pre-panic
+# values now that the real leak above is fixed (see model_config.yaml's
+# DECISION comments). Resetting peak-memory tracking here, right before
+# Phase 4 starts, so the post-training peak print below reflects 3B
+# training's own real footprint only — real evidence for how much headroom
+# actually exists now, not a number contaminated by Phase 3's already-freed
+# 7B usage.
+torch.cuda.reset_peak_memory_stats()
 
 # Read directly rather than hardcoding the model name in the print below —
 # model_config.yaml's SFT target changed from 7B to 3B after the 7B hang saga
@@ -188,10 +196,19 @@ with open(MODEL_CONFIG_PATH, encoding="utf-8") as f:
 print("=" * 70, flush=True)
 print(f"PHASE 4: SFT + QLoRA fine-tuning ({_sft_model_name})", flush=True)
 print("=" * 70, flush=True)
+# checkpoint_subdir="sft_v25" so this run's checkpoint lands in its own
+# directory rather than overwriting v24's (already committed at
+# checkpoints/sft_v24_final/) — v24 stays available as the documented,
+# proven-working fallback regardless of how this higher-capacity attempt
+# turns out.
 run_sft_train(
     model_config_path=MODEL_CONFIG_PATH,
     training_config_path=TRAINING_CONFIG_PATH,
     environment="kaggle",
+    checkpoint_subdir="sft_v25",
 )
 
+print(f"=== Phase 4 peak GPU memory (this training run only, Phase 3's usage excluded): "
+      f"{torch.cuda.max_memory_allocated() / 1e9:.2f} GB allocated, "
+      f"{torch.cuda.max_memory_reserved() / 1e9:.2f} GB reserved ===", flush=True)
 print("Done. Outputs under /kaggle/working/results and /kaggle/working/checkpoints.", flush=True)

@@ -148,7 +148,30 @@ model:
   # restored to 512px — v19's own exact, already-validated real-footprint
   # data point (~7.26GiB, ~7.3GiB of headroom under the 14.56GiB budget) —
   # a genuinely evidenced choice, not a new guess.
-  max_image_size: 512
+  #
+  # REAL CORRECTION (v26, class-balanced retrain, 2026-07-24): this exact
+  # r=8/512px/max_seq_length=2048 combination had actually never been tested
+  # with a real training run before now -- the "final decision" v25 push
+  # intended to test it, but a real process error (dataset propagation lag)
+  # meant that kernel ran with a stale r=16 config instead (see
+  # phase4_sft_summary.md's "v25" section). When r=8/512px/seq=2048 finally
+  # ran for real (v26), it OOM'd immediately on the first training step:
+  # 374MiB short, 14.46GiB total in use -- nowhere near the inferred
+  # ~7.26GiB "safe" estimate above. That estimate was built on v19's OLD
+  # data, which predates max_seq_length even being wired into collate()
+  # (fixed in v23) -- v19 trained on genuinely uncapped sequences and still
+  # fit, so its real footprint was never a like-for-like comparison to a run
+  # that actually truncates to 2048 tokens. The inference was reasonable
+  # given what was known at the time; real data has now shown it wrong.
+  # Single best-reasoned fix applied (per the standing "one well-reasoned
+  # attempt, don't loop on variations" instruction): cut to 384px, based on
+  # the real, internally-consistent DELTA between v19 (512px) and v20
+  # (384px)'s original in-use numbers (14.55GiB vs 14.03GiB, ~520MiB real
+  # difference -- trustworthy as a delta even though each absolute number
+  # included the since-fixed ~7.29GiB leak equally). Applying that ~520MiB
+  # saving to v26's real 14.46GiB shortfall leaves ~600MB of margin under
+  # the 14.56GiB budget -- a real, evidence-based single fix, not a guess.
+  max_image_size: 384
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.

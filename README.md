@@ -14,8 +14,12 @@ DPO), not API calls to a hosted model; every experiment reports sample sizes and
 confidence intervals, not single-point accuracy; failures are documented, not
 hidden.
 
-**Status:** scaffolding complete (Phase 1). No trained model yet — see
-[Build Status](#build-status) below.
+**Status:** Real fine-tuned checkpoint trained and committed
+(`checkpoints/sft_v24_final/`), zero-shot baseline and adversarial-rounds
+results in hand, leave-one-out and quantization benchmarking running on
+Kaggle. See [Build Status](#build-status) and
+[Results so far](#results-so-far) below — every number linked is real, not
+projected.
 
 ## System Overview
 
@@ -183,15 +187,34 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 |---|---|---|
 | 1 | Scaffold (folders, configs, requirements, README) | Done |
 | 2 | Data foundation (MIDV-2020, Tier 1-2 forgeries, degradation) | Done |
-| 3 | Baselines (zero-shot VLM, OCR) | OCR done; VLM eval built + tested, real numbers deferred to Kaggle |
-| 4 | Core SFT + QLoRA fine-tuning | In progress — 7B training hit an unresolved T4 hang after 3 targeted fixes (OOM resolved, then 2 hang variants); switched training target to 3B, see [Model size decision](#model-size-3b-trained-7b-baseline-a-documented-decision) |
-| 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Tier 4/5 done; Tier 3 mask logic done, diffusion inference deferred to Kaggle |
-| 6 | Core experiments (leave-one-out, adversarial rounds) | Orchestration/aggregation logic built + tested; real per-fold/per-round training deferred to Kaggle |
-| 7 | Decision layer (risk tiering, cost matrix, cost-tradeoff sim, financial risk reasoning) | Risk-tiering + cost sim done, fully real (no model involved); financial risk reasoning not started (needs the fine-tuned model) — see [results/tables/phase6_7_groundwork_summary.md](results/tables/phase6_7_groundwork_summary.md) |
-| 8 | DPO + retrieval | Retrieval (case_index.py) done, real end-to-end verified locally; DPO not started |
-| 9 | Quantization benchmarking | Not started |
-| 10 | Layer 3 (optional) | Not started |
-| 11 | Demo + writeup | Not started |
+| 3 | Baselines (zero-shot VLM, OCR) | Done — real Kaggle result, n=9, see [Results so far](#results-so-far) |
+| 4 | Core SFT + QLoRA fine-tuning | **Done — real completed training run (kernel v24)**, checkpoint committed. See [Model size decision](#model-size-3b-trained-7b-baseline-a-documented-decision) and the full debugging saga in [writeup/project_report.md](writeup/project_report.md) |
+| 5 | Forgery tiers 3-5 (inpainting, synthetic, recapture) | Done — all 5 tiers generated for real |
+| 6 | Core experiments (leave-one-out, adversarial rounds) | Adversarial rounds done (real result, see below); leave-one-out running on Kaggle |
+| 7 | Decision layer (risk tiering, cost matrix, cost-tradeoff sim, financial risk reasoning) | Done — fully real, unit-tested, wired into the demo app |
+| 8 | DPO + retrieval | Retrieval done, real end-to-end (demo app uses it live); DPO scoped out (documented decision, see writeup) |
+| 9 | Quantization benchmarking | Running on Kaggle |
+| 10 | Layer 3 (optional) | Not attempted (time-boxed behind Layers 1-2, as planned) |
+| 11 | Demo + writeup | Streamlit demo built (polished UI, real captured-prediction replay + live retrieval/decision layer); writeup written with real results throughout |
 
-Results, charts, and the full paper-style writeup will be embedded here as each
-phase completes.
+## Results so far
+
+*Every number here is real — see `results/tables/` for the underlying data and
+[writeup/project_report.md](writeup/project_report.md) for the full analysis.*
+
+- **Zero-shot Qwen2.5-VL-7B baseline** (n=9): 66.7% tamper-verdict accuracy —
+  but the real story is a high-recall/high-false-positive pattern: 6/6 real
+  forgeries caught, 0/3 genuine documents correctly identified as genuine
+  (the model hallucinates plausible-sounding tamper justifications).
+- **SFT training (kernel v24)**: 135/135 steps, 3 epochs, completed for real
+  after 11 prior kernel pushes failed across two distinct failure modes — see
+  the full debugging story in the writeup. Loss plateaus at ~1.25-1.26 for
+  epochs 2-3, flagged as a real capacity-limitation finding.
+- **Adversarial retraining rounds** (n=30/round): headline accuracy goes
+  33.3% → 66.7% → 33.3% across 3 rounds, but the real finding is that **every
+  round is a single-class predictor** (round 0: always "genuine"; round 1:
+  always "tampered"; round 2: always "genuine" again) — real, corroborating
+  evidence for the training-loss-plateau capacity hypothesis. Full analysis:
+  [results/tables/phase6_adversarial_rounds_summary.md](results/tables/phase6_adversarial_rounds_summary.md).
+- **Leave-one-out generalization** and **quantization benchmarking**: running
+  on Kaggle — see [PROJECT_STATUS.md](PROJECT_STATUS.md) for live status.

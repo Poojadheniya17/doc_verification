@@ -1,0 +1,107 @@
+[
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_PA0265774_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_NO6989301_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_EN9634630_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_HD3706177_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_AU6005237_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_UR9097708_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_EU6427554_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_ET6586542_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_RC1893193_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_PJ9498024_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_ZL0542146_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_WA1972713_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_WZ2247403_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_OK4745660_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_JB6927295_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  }
+]

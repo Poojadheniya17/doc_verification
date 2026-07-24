@@ -1,0 +1,107 @@
+[
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_42_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_41_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_91_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_09_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_65_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_50_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_01_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_70_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_15_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_78_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_73_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_10_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_55_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_56_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_72_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  }
+]

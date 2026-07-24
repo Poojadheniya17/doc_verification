@@ -1,0 +1,93 @@
+[
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_42_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_41_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_91_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_09_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_65_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_50_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_01_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_70_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_15_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_78_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_73_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_55_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": null,
+    "parse_success": false
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_56_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  }
+]

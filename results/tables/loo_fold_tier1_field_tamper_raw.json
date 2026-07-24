@@ -1,0 +1,72 @@
+[
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/42_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/41_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/91_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/09_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/65_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/50_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/01_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/70_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/15_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/78_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": false,
+    "predicted_verdict": "genuine",
+    "parse_success": true
+  }
+]

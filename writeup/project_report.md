@@ -350,16 +350,29 @@ for the remaining two epochs with no further real improvement — flagged
 here as a real finding, expanded on in Failure Analysis below, not a minor
 training-curve footnote.
 
-### Leave-one-out generalization (Phase 6) — **PENDING**
+### Leave-one-out generalization (Phase 6, real Kaggle result, 5 full retrains, ~11h 39m)
 
-The 5-fold leave-one-out Kaggle job (`doc-verification-leave-one-out`) was
-still running at the time of this writing (a real ~11-hour job — 5 full
-QLoRA retrains, one per held-out tier). This section will be populated with
-real per-tier accuracy and bootstrap CIs once that job completes. **No
-placeholder numbers are given here** — see `results/tables/` for whether
-`phase6_leave_one_out_results.json` exists yet, and the results notebook's
-corresponding cell, which prints an explicit "PENDING" message rather than
-fabricating a chart.
+This is this project's central experiment — does tamper detection generalize
+to an attack type never seen during training — and it produced the
+project's most important, most honestly-reported real result.
+
+| Held-out tier | n | Accuracy | 95% CI | Training set size (real) |
+|---|---|---|---|---|
+| tier1_field_tamper | 10 | **0.000** | [0.000, 0.000] | 754 |
+| tier2_splicing | 15 | **0.000** | [0.000, 0.000] | 751 |
+| tier3_inpainting | 13 | **0.000** | [0.000, 0.000] | 749 |
+| tier4_full_synthetic | 15 | **0.000** | [0.000, 0.000] | 747 |
+| tier5_recapture | 15 | **0.000** | [0.000, 0.000] | 747 |
+| **Overall** | **68** | **0.000** | **[0.000, 0.000]** | — |
+
+**Every one of 5 independent full retrains from the base model — each on a
+real, substantial ~747-754-example dataset, not a small perturbation —
+scored exactly 0.000 accuracy on its held-out tier.** The per-example
+verdict distribution shows why: across all 68 held-out (all genuinely
+tampered) examples, **zero were predicted "tampered."** Every fold converged
+to a model that predicts "genuine" for essentially everything, regardless of
+what it's shown. Full per-fold verdict breakdown and analysis:
+`results/tables/phase6_leave_one_out_summary.md`.
 
 ### Adversarial retraining rounds (Phase 6, real Kaggle result, n=30/round)
 
@@ -422,86 +435,126 @@ uses `bitsandbytes` for actual quantization) and re-pushed successfully.
 
 ## Failure Analysis
 
-**The adversarial-retraining collapse (above) is this project's most
-important, most honestly-reported failure, and it is real evidence for a
-specific, testable hypothesis, not an unexplained anomaly.**
+**This project's central finding, stated as plainly as the evidence
+supports it: at the training configuration this project actually ran, the
+model shows no evidence of having learned image-content-based tamper
+discrimination.** Three independent real evaluations — leave-one-out (5
+full retrains), adversarial retraining rounds, and quantization
+benchmarking — all converge on the same failure signature, and the
+leave-one-out result is the most statistically meaningful of the three.
 
-The training-loss plateau at v24 (stuck ~1.25-1.26 for epochs 2-3, no
-further improvement after a fast epoch-1 drop) was flagged at the time as a
-*possible* sign of limited model capacity, driven by two compute-forced
-configuration choices: **LoRA rank 4** (cut from an original r=16 across
-v8-v23's memory-constraint fight — never chosen because r=4 was judged
-sufficient) and a small **719-example** training set. The adversarial-rounds
-result is direct, corroborating evidence for that hypothesis: a model with
-genuine capacity to discriminate genuine-vs-tampered content, retrained on a
-small (10-20 example) batch of mined failures, should refine its decision
-boundary incrementally. A model with insufficient capacity — or one that
-never learned a real decision boundary in the first place — should instead
-do exactly what was observed: each small retrain has enough gradient signal
-to flip the whole adapter's global output bias, but not enough signal (or
-representational room) to learn a distinction that survives past the
-specific examples it just saw.
+**Leave-one-out (the primary evidence).** Every one of 5 independent full
+QLoRA retrains from the base model — each on a real, substantial
+~747-754-example training set, not a small perturbation — scored **exactly
+0.000 accuracy** on its held-out tier, across 68 total held-out examples.
+The per-example verdict distribution shows why: zero of those 68 examples
+were ever predicted "tampered." Every fold, trained fresh, converged to a
+model that predicts "genuine" for essentially everything it sees.
 
-This reframes how the whole training pipeline's success should be read.
-Phase 4 completing 135/135 training steps without crashing was a genuine,
-hard-won engineering milestone (see *Engineering Journey* above) — but a
-training run finishing cleanly is a different claim than a model learning
-the task well, and this project's own adversarial-rounds evaluation is
-honest evidence that, at the compute-forced configuration this project
-landed on, the second claim is not yet supported.
+**Adversarial retraining rounds (corroborating).** Headline accuracy moves
+33.3% → 66.7% → 33.3% across 3 rounds, which looks like noisy
+improvement-then-regression — but the per-example verdict distribution
+shows every round is actually a single-class predictor (round 0/2: always
+"genuine"; round 1: always "tampered"), flipping the adapter's entire global
+bias based on whichever tiny (10-20 example) mined-failure batch it saw
+most recently, never refining a real decision boundary.
 
-**Independent corroboration**: the quantization benchmark (below) found the
-same v24 checkpoint scoring exactly 50.0% accuracy at all three tested
-precisions (fp16/int8/int4) on a separate, perfectly-balanced 40-example
-eval set — the same single-class-collapse signature (a model defaulting to
-one verdict scores exactly 50% on a balanced set regardless of numeric
-precision), observed independently of the adversarial-retraining process
-itself. This rules out "an artifact specific to the adversarial-rounds
-retraining loop" as the explanation and strengthens the case that v24's
-checkpoint itself, not the evaluation procedure, is the source of the
-degenerate behavior.
+**Quantization benchmarking (corroborating, and independent of any
+retraining).** The same v24 checkpoint scored exactly 50.0% accuracy at all
+three tested precisions (fp16/int8/int4) on a separate, perfectly-balanced
+40-example set — the same always-one-class signature, this time with zero
+retraining involved at all, ruling out "an artifact of some retraining
+loop specifically" as the explanation.
 
-**A direct test of the hypothesis was launched the same night** (v25):
-restoring LoRA rank (4→16), image size (256px→768px), and sequence length
-(1024→2048) toward their pre-panic values, now that the real cause of
-v19-v23's memory ceiling (the leftover-7B-model leak, not these
-hyperparameters) was found and fixed in v24. Real math motivating this:
-v23's OOM showed 14.36GiB in use at crash time; subtracting the confirmed
-~7.29GiB leak leaves 3B training's actual footprint at only ~7.07GiB against
-a ~14.56GiB budget — roughly 2x headroom was available the entire time
-v19-v23's search was running. If this hypothesis is correct, a checkpoint
-trained with meaningfully more capacity should show real image-content
-discrimination rather than single-class collapse. *(Result pending at the
-time of this section being written — see the top of this document / commit
-history for whether v25 completed and what its adversarial-rounds re-test
-showed. This is being reported honestly regardless of outcome: if restored
-capacity does NOT fix the collapse, that is equally important evidence,
-ruling out the capacity hypothesis and pointing at something else — e.g. the
-learning-rate schedule, the 719-example dataset's own diversity, or the
-tier1/tier2-only training composition.)*
+**The most likely real cause, reasoned honestly: severe class imbalance.**
+Every leave-one-out fold's training set is ~694 genuine examples against
+only ~40-55 total forgery examples spread across 4 remaining tiers
+(roughly 6-8% tampered). A model minimizing training loss under this
+imbalance has an easy, strong local optimum available: predict "genuine"
+unconditionally and be right ~92-94% of the time on the training set
+itself, without ever needing to use image content to discriminate. This is
+a textbook class-imbalance collapse, and — combined with the training-loss
+plateau observed in v24 (stuck ~1.25-1.26 for epochs 2-3, no further
+improvement after a fast epoch-1 drop) — likely compounds with a genuine
+capacity limitation: **LoRA rank 4** (cut from an original r=16 across
+v8-v23's memory-constraint fight, never chosen because r=4 was judged
+sufficient) may leave a model even less able to resist collapsing to the
+easy majority-class shortcut than a higher-capacity model would.
 
-**Leave-one-out results**, once available, are a further, more statistically
-meaningful read on generalization specifically (as opposed to the capacity
-question above) — each leave-one-out fold is a genuine ~719-example retrain
-from the base model, not a 10-20-example perturbation. This section will be
-updated once those results are in.
+**The v25 investigation: testing the capacity hypothesis directly, and a
+genuinely unresolved anomaly found along the way.** The same night, LoRA
+rank/image size/sequence length were restored toward pre-panic values, now
+that the real cause of v19-v23's memory ceiling (the leftover-7B-model leak,
+not these hyperparameters — see *Engineering Journey*) was understood.
+Real math motivating this: v23's OOM showed 14.36GiB in use at crash time;
+subtracting the confirmed ~7.29GiB leak leaves 3B training's actual
+footprint at only ~7.07GiB against a ~14.56GiB budget — roughly 2x headroom
+was available the entire time v19-v23's search was running.
+
+Three attempts followed, each OOM'ing, and the pattern across them is
+itself a real, documented anomaly worth reporting honestly rather than
+glossing over: attempt 1 (r=16, 768px, seq=2048) and attempt 2 (r=16, 384px,
+seq=1536) OOM'd with **byte-for-byte identical memory numbers** — same
+44.00 MiB requested, same 8.81 MiB free, same 14.55 GiB in use — despite a
+4x pixel-area cut and a real sequence-length change between them (verified
+via a diagnostic kernel to rule out a stale-config artifact). Attempt 3
+isolated LoRA rank alone (reverting image size/sequence length to v24's
+proven floor) and produced the **same identical failure a third time**,
+conclusively attributing the cause to LoRA rank r=16 itself. A web search
+for a documented bitsandbytes/peft mechanism explaining this did not surface
+a definitive answer for this exact library-version combination; rather than
+keep guessing, this project's own already-collected v19-v22 data (predating
+the leak's discovery) was re-examined through the now-understood lens: image
+sizes 256-512px at LoRA rank 4 *or* 8 all show real footprints in a tight
+~6.7-7.3GiB band, meaning **the discontinuity is specifically between r=8
+and r=16**, not a gradual scaling curve — real, if incomplete, evidence,
+not a resolved mechanism. *(The final, evidence-based attempt — r=8,
+512px, seq=2048 — was pushed based on this reasoning; see the top of this
+document / `phase4_sft_summary.md` / commit history for its real outcome,
+reported honestly regardless of result.)*
+
+**Whatever v25's outcome, the leave-one-out result above already implies a
+real limit on what capacity restoration alone can fix**: even a
+higher-capacity checkpoint trained on the same ~6-8%-tampered class balance
+has every incentive to collapse to the same majority-class shortcut. The
+most concrete, evidence-backed next step this project's own data points to
+is addressing the class imbalance directly (oversampling forgery examples,
+a weighted loss, or a substantially larger and more balanced forgery
+dataset per tier) — ahead of further capacity tuning, which this session's
+evidence suggests is necessary but likely not sufficient on its own.
 
 ## Limitations
 
+- **No evidence of learned tamper discrimination at the configuration this
+  project trained.** Stated first because it is the most important honest
+  limitation: leave-one-out (5 full retrains), adversarial rounds, and
+  quantization benchmarking all independently show the trained model
+  collapsing to a single predicted class rather than discriminating on
+  image content. See Failure Analysis above for the full evidence and the
+  class-imbalance hypothesis this points to.
+- **Severe class imbalance in every training configuration run.** ~694
+  genuine examples against only ~40-55 forgery examples per leave-one-out
+  fold (~6-8% tampered) — likely the dominant driver of the collapse above,
+  ahead of the capacity question below. No oversampling, weighted loss, or
+  balanced sampling was attempted in any run reported here.
 - **Synthetic/public data only.** All training and evaluation data comes
   from MIDV-2020 (a public, CC BY-SA 2.5 dataset of synthetic documents with
   AI-generated faces) plus this project's own locally-generated forgeries.
   No real fraud data was used or is claimed to have been used.
 - **Compute-forced hyperparameters, not chosen ones.** LoRA rank 4,
   `max_image_size=256`, `max_seq_length=1024`, and gradient checkpointing
-  disabled are all the product of an extensive Kaggle free-tier T4 memory
-  fight (see *Engineering Journey*), not values independently judged optimal
-  for this task. The adversarial-rounds finding above is real evidence this
-  matters, not just a theoretical caveat.
-- **Small real sample sizes throughout.** The zero-shot baseline (n=9) and
-  adversarial-rounds eval set (n=30) both carry wide bootstrap confidence
-  intervals, reported honestly rather than treated as precise point
-  estimates.
+  disabled (v24's configuration) are all the product of an extensive Kaggle
+  free-tier T4 memory fight (see *Engineering Journey*), not values
+  independently judged optimal for this task. A later attempt to restore
+  capacity (v25) surfaced a genuinely unresolved anomaly (LoRA rank r=16
+  causing catastrophic, non-linear memory growth on this exact library
+  combination) — documented honestly as an open question, not a solved one.
+- **Small real sample sizes for two of three eval procedures.** The
+  zero-shot baseline (n=9) and adversarial-rounds/quantization eval sets
+  (n=30-40) carry wide bootstrap confidence intervals. Leave-one-out (n=68
+  across 5 real full retrains) is the most statistically grounded of the
+  three, and its result — exactly 0.000 accuracy, CI [0,0] — has no
+  meaningful uncertainty to caveat.
 - **7B-vs-3B baseline comparison is not a clean ablation.** The zero-shot
   baseline uses 7B (the original plan); the fine-tuned model is 3B (a
   documented, evidence-based scope change after the 7B training hang could
@@ -524,12 +577,22 @@ updated once those results are in.
 
 ## Future Work
 
-- **Address the capacity-limitation finding directly**: re-run SFT at a
-  higher LoRA rank and/or a larger training set once more compute budget is
-  available (a paid Kaggle tier, or a different provider), and check whether
-  the adversarial-rounds single-class-collapse pattern goes away — this is
-  the most concrete, well-evidenced next experiment this project's own
-  results point to.
+- **Address the class imbalance directly — the single most evidence-backed
+  next step.** Oversample forgery examples, use a weighted loss, or generate
+  a substantially larger and more balanced forgery dataset per tier (this
+  project's real per-fold tampered fraction was only ~6-8%). The
+  leave-one-out result is real evidence this matters more than capacity
+  alone: a higher-capacity model trained on the same imbalance has every
+  incentive to collapse to the same majority-class shortcut.
+- **Resolve the v25 memory anomaly**: understand why LoRA rank r=16
+  specifically (not a gradual function of rank) causes catastrophic,
+  non-linear GPU memory growth on this exact bitsandbytes/peft/transformers
+  version combination — documented honestly in Failure Analysis as an
+  open question this session's real investigation could not fully resolve.
+- **Re-run SFT at a higher LoRA rank and/or a larger, better-balanced
+  training set** once more compute budget is available (a paid Kaggle tier,
+  or a different provider) — informed by both findings above, not capacity
+  alone.
 - **RL-based self-play forger**: train an adversarial generator against the
   detector in a closed loop, rather than this project's fixed 5-tier
   scripted taxonomy. Explicitly out of scope here, documented as a real

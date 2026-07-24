@@ -1,0 +1,27 @@
+{
+  "kernel": "v24",
+  "model": "Qwen2.5-VL-3B-Instruct",
+  "lora_r": 4,
+  "max_seq_length": 1024,
+  "max_image_size": 256,
+  "n_training_examples": 719,
+  "total_steps": 135,
+  "train_runtime_seconds": 7998.9749,
+  "final_train_loss_running_average": 1.7295982360839843,
+  "loss_by_epoch": [
+    {"epoch": 0.22, "loss": 5.0306},
+    {"epoch": 0.45, "loss": 3.1235},
+    {"epoch": 0.67, "loss": 1.7552},
+    {"epoch": 0.89, "loss": 1.4079},
+    {"epoch": 1.11, "loss": 1.3138},
+    {"epoch": 1.33, "loss": 1.2887},
+    {"epoch": 1.56, "loss": 1.2771},
+    {"epoch": 1.78, "loss": 1.2672},
+    {"epoch": 2.00, "loss": 1.2568},
+    {"epoch": 2.22, "loss": 1.2509},
+    {"epoch": 2.45, "loss": 1.2513},
+    {"epoch": 2.67, "loss": 1.2509},
+    {"epoch": 2.89, "loss": 1.2550}
+  ],
+  "note": "Fast drop in epoch 1, then a plateau around 1.25-1.26 for epochs 2-3 with no further real improvement - flagged as a possible sign of limited model capacity given lora_r=4 (cut for Kaggle T4 memory reasons, not judged sufficient) and the small 719-example training set. See results/tables/phase4_sft_summary.md and phase6_adversarial_rounds_summary.md (which found real corroborating evidence: the model collapses to single-class prediction under small-batch adversarial retraining) for the full reasoning."
+}

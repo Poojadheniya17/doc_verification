@@ -1,0 +1,250 @@
+{
+  "model_name": "Qwen/Qwen2.5-VL-7B-Instruct",
+  "device": "cuda",
+  "load_in_4bit": true,
+  "n_examples": 9,
+  "n_per_category": 3,
+  "parse_success_rate": {
+    "mean": 1.0,
+    "ci_low": 1.0,
+    "ci_high": 1.0,
+    "n": 9
+  },
+  "tamper_verdict_accuracy": {
+    "mean": 0.6666666666666666,
+    "ci_low": 0.3333333333333333,
+    "ci_high": 1.0,
+    "n": 9
+  },
+  "field_similarity": {
+    "name": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "dob": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "id_number": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "expiry": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    }
+  },
+  "field_exact_match": {
+    "name": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "dob": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "id_number": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "expiry": {
+      "mean": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    }
+  },
+  "examples": [
+    {
+      "image_path": "data/raw/midv2020_templates/images/alb_id/04.jpg",
+      "true_label": "genuine",
+      "ground_truth": {
+        "name": "Agron Albrup",
+        "dob": "21-03-1985",
+        "id_number": "807908701",
+        "address": null,
+        "expiry": "09-06-2028"
+      },
+      "raw_output": "{\n  \"name\": \"Agron Albrup\",\n  \"dob\": \"21-03-1985\",\n  \"id_number\": \"807908701\",\n  \"address\": \"Vlor\u00eb, ALB\",\n  \"expiry\": \"09-06-2028\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on Albanian IDs.\"\n}",
+      "parsed": {
+        "name": "Agron Albrup",
+        "dob": "21-03-1985",
+        "id_number": "807908701",
+        "address": "Vlor\u00eb, ALB",
+        "expiry": "09-06-2028",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on Albanian IDs."
+      },
+      "parse_success": true,
+      "tamper_correct": false
+    },
+    {
+      "image_path": "data/raw/midv2020_templates/images/alb_id/54.jpg",
+      "true_label": "genuine",
+      "ground_truth": {
+        "name": "Bajram Dedej",
+        "dob": "01-02-1999",
+        "id_number": "400211657",
+        "address": null,
+        "expiry": "04-07-2026"
+      },
+      "raw_output": "```json\n{\n  \"name\": \"Bajram Dedej\",\n  \"dob\": \"01-02-1999\",\n  \"id_number\": \"400211657\",\n  \"address\": null,\n  \"expiry\": \"04-07-2026\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The signature appears to be digitally added rather than handwritten, which is inconsistent with the rest of the document.\"\n}\n```",
+      "parsed": {
+        "name": "Bajram Dedej",
+        "dob": "01-02-1999",
+        "id_number": "400211657",
+        "address": null,
+        "expiry": "04-07-2026",
+        "tamper_verdict": "tampered",
+        "explanation": "The signature appears to be digitally added rather than handwritten, which is inconsistent with the rest of the document."
+      },
+      "parse_success": true,
+      "tamper_correct": false
+    },
+    {
+      "image_path": "data/raw/midv2020_templates/images/alb_id/75.jpg",
+      "true_label": "genuine",
+      "ground_truth": {
+        "name": "Delina Gecaj",
+        "dob": "18-05-1971",
+        "id_number": "209694597",
+        "address": null,
+        "expiry": "01-02-2029"
+      },
+      "raw_output": "```json\n{\n  \"name\": \"Delina Gecaj\",\n  \"dob\": \"18-05-1971\",\n  \"id_number\": \"209694597\",\n  \"address\": null,\n  \"expiry\": \"01-02-2029\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on Albanian IDs.\"\n}\n```",
+      "parsed": {
+        "name": "Delina Gecaj",
+        "dob": "18-05-1971",
+        "id_number": "209694597",
+        "address": null,
+        "expiry": "01-02-2029",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on Albanian IDs."
+      },
+      "parse_success": true,
+      "tamper_correct": false
+    },
+    {
+      "image_path": "data/synthetic_forgeries/tier1_field_tamper/42_tier1.jpg",
+      "true_label": "tampered",
+      "ground_truth": null,
+      "tier": "tier1",
+      "raw_output": "{\n  \"name\": \"Armands Salmins\",\n  \"dob\": \"14.07.1976\",\n  \"id_number\": \"LV3516240\",\n  \"address\": \"JELGAVAS NODALA, RIGA\",\n  \"expiry\": \"10.03.2029\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on official documents.\"\n}",
+      "parsed": {
+        "name": "Armands Salmins",
+        "dob": "14.07.1976",
+        "id_number": "LV3516240",
+        "address": "JELGAVAS NODALA, RIGA",
+        "expiry": "10.03.2029",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on official documents."
+      },
+      "parse_success": true,
+      "tamper_correct": true
+    },
+    {
+      "image_path": "data/synthetic_forgeries/tier1_field_tamper/41_tier1.jpg",
+      "true_label": "tampered",
+      "ground_truth": null,
+      "tier": "tier1",
+      "raw_output": "{\n  \"name\": \"Luis Arkadijs\",\n  \"dob\": \"12.12.1993\",\n  \"id_number\": \"LV9227286\",\n  \"address\": null,\n  \"expiry\": \"28.01.2019\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on such documents.\"\n}",
+      "parsed": {
+        "name": "Luis Arkadijs",
+        "dob": "12.12.1993",
+        "id_number": "LV9227286",
+        "address": null,
+        "expiry": "28.01.2019",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on such documents."
+      },
+      "parse_success": true,
+      "tamper_correct": true
+    },
+    {
+      "image_path": "data/synthetic_forgeries/tier1_field_tamper/91_tier1.jpg",
+      "true_label": "tampered",
+      "ground_truth": null,
+      "tier": "tier1",
+      "raw_output": "{\n  \"name\": \"Oskars L\u016bsis\",\n  \"dob\": \"11.03.2002\",\n  \"id_number\": \"LV79257778\",\n  \"address\": null,\n  \"expiry\": \"22.04.2029\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on official documents.\"\n}",
+      "parsed": {
+        "name": "Oskars L\u016bsis",
+        "dob": "11.03.2002",
+        "id_number": "LV79257778",
+        "address": null,
+        "expiry": "22.04.2029",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on official documents."
+      },
+      "parse_success": true,
+      "tamper_correct": true
+    },
+    {
+      "image_path": "data/synthetic_forgeries/tier2_splicing/42_spliced_48_tier2.jpg",
+      "true_label": "tampered",
+      "ground_truth": null,
+      "tier": "tier2",
+      "raw_output": "{\n  \"name\": \"Armands Salmins\",\n  \"dob\": \"14.07.1976.\",\n  \"id_number\": \"LV3516240\",\n  \"address\": \"JELGAVAS NODALA, RIGA\",\n  \"expiry\": \"10.03.2029.\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on official documents.\"\n}",
+      "parsed": {
+        "name": "Armands Salmins",
+        "dob": "14.07.1976.",
+        "id_number": "LV3516240",
+        "address": "JELGAVAS NODALA, RIGA",
+        "expiry": "10.03.2029.",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on official documents."
+      },
+      "parse_success": true,
+      "tamper_correct": true
+    },
+    {
+      "image_path": "data/synthetic_forgeries/tier2_splicing/41_spliced_33_tier2.jpg",
+      "true_label": "tampered",
+      "ground_truth": null,
+      "tier": "tier2",
+      "raw_output": "{\n  \"name\": \"Lulis Arkadijs\",\n  \"dob\": \"12.12.1993.\",\n  \"id_number\": \"LV9227286\",\n  \"address\": null,\n  \"expiry\": \"28.10.2029.\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on official documents.\"\n}",
+      "parsed": {
+        "name": "Lulis Arkadijs",
+        "dob": "12.12.1993.",
+        "id_number": "LV9227286",
+        "address": null,
+        "expiry": "28.10.2029.",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on official documents."
+      },
+      "parse_success": true,
+      "tamper_correct": true
+    },
+    {
+      "image_path": "data/synthetic_forgeries/tier2_splicing/91_spliced_70_tier2.jpg",
+      "true_label": "tampered",
+      "ground_truth": null,
+      "tier": "tier2",
+      "raw_output": "{\n  \"name\": \"Oskars L\u016bsis\",\n  \"dob\": \"07.03.2004\",\n  \"id_number\": \"LV79257778\",\n  \"address\": null,\n  \"expiry\": \"22.04.2029\",\n  \"tamper_verdict\": \"tampered\",\n  \"explanation\": \"The ID number appears to be edited, as it is not consistent with the format typically used on official documents.\"\n}",
+      "parsed": {
+        "name": "Oskars L\u016bsis",
+        "dob": "07.03.2004",
+        "id_number": "LV79257778",
+        "address": null,
+        "expiry": "22.04.2029",
+        "tamper_verdict": "tampered",
+        "explanation": "The ID number appears to be edited, as it is not consistent with the format typically used on official documents."
+      },
+      "parse_success": true,
+      "tamper_correct": true
+    }
+  ]
+}

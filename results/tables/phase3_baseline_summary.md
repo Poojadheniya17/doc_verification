@@ -30,16 +30,37 @@ match the concatenated ground truth by construction — this is exactly the kind
 of thing a fine-tuned VLM (which understands "the name" as a semantic concept,
 not a text-proximity rule) should fix.
 
-## Zero-shot VLM baseline (Qwen2.5-VL, no fine-tuning) — deferred to Kaggle
+## Zero-shot VLM baseline (Qwen2.5-VL-7B-Instruct, no fine-tuning) — real Kaggle result
 
-No real numbers here yet, and that's a deliberate outcome of this phase, not an
-oversight. `src/eval/clean_eval.py` is fully implemented (prompt, JSON-parsing,
-per-field similarity/exact-match, tamper-verdict accuracy, all reported through
-`bootstrap_ci`) and its pure logic is unit-tested
-(`test_extract_json_handles_markdown_fenced_output`,
-`test_extract_json_returns_none_on_unparseable_output`,
-`test_build_eval_sample_balances_categories`) — but it has not been run against
-a real model on this machine.
+Ran for real as part of kernel v24's Phase 3 step (same session that produced
+Phase 4's first completed SFT training run — see `phase4_sft_summary.md`).
+9 examples (smoke-scale: 3 genuine + 3 tier1 + 3 tier2, `n_per_category=3` —
+the same scale caveat as the OCR baseline above applies). Full raw output in
+`results/tables/phase3_clean_eval_baseline_7b.json`.
+
+| Metric | Value | 95% CI | n |
+|---|---|---|---|
+| Parse success rate | 100% | [100%, 100%] | 9 |
+| Tamper-verdict accuracy | 66.7% | [33.3%, 100%] | 9 |
+| Field similarity (name/dob/id_number/expiry) | 1.00 each | [1.00, 1.00] | 3 each |
+
+**The real, honest story behind that 66.7%, not just the headline number:**
+the model caught **all 6 real forgeries** (tier1 + tier2, 6/6 correct) but
+**incorrectly flagged all 3 genuine documents as tampered** (0/3 correct) —
+in each case hallucinating a specific-sounding but false tamper cue (e.g.
+"the ID number appears to be edited, as it is not consistent with the format
+typically used on Albanian IDs" — a genuine, unedited ID number). This is a
+**high-recall, high-false-positive-rate** pattern: zero-shot 7B never misses
+a real forgery in this small sample, but is trigger-happy on genuine
+documents, inventing plausible-sounding justifications rather than abstaining
+when uncertain. Worth watching whether the fine-tuned 3B model (trained
+specifically on genuine-vs-tampered examples, unlike the zero-shot 7B) shows
+the same bias or corrects it — see `phase6_adversarial_rounds_summary.md`
+for a related, real finding about the fine-tuned model's own verdict biases.
+
+CIs are extremely wide at n=9 (or n=3 per field) — stated plainly, not
+hidden. This is a smoke-scale sample, not a statistically powered baseline;
+see the Scale note below.
 
 **Why:** this dev machine has only ~7.7GB total RAM (often <1GB free at idle).
 Qwen2.5-VL-3B-Instruct was downloaded (7.1GB, real weights, verified complete)
@@ -55,17 +76,24 @@ fight. This is now a documented standing constraint (README.md,
 `config/training_config.yaml`) for every later phase: no model ever loads
 locally on this machine, at any size.
 
-**What "done" looks like for this phase without the VLM number:** OCR baseline
-run for real (above), VLM eval script fully built and logic-tested, real VLM
-baseline numbers explicitly deferred to the first Kaggle session (which Phase 4
-needs anyway for SFT training) rather than faked or hand-waved locally.
+**What actually happened:** OCR baseline run for real locally (above), VLM eval
+script built and logic-tested locally, then the real VLM baseline itself run
+for real on the first Kaggle session — see the results above. It stayed at
+the same 9-example smoke scale as the local OCR run rather than being scaled
+up to a larger split before Phase 4 began (Kaggle time went to getting SFT
+training working first, given the extensive debugging saga documented in
+`phase4_sft_summary.md`) — reported honestly as a small-sample number with
+wide CIs, not silently upgraded to look more authoritative than it is.
 
 ## Scale note
 
 OCR baseline ran on 10 examples — smoke-scale, sized for local CPU iteration
-speed, not a final reported number. The real reported zero-shot baseline uses
-Qwen2.5-VL-**7B**-Instruct (the actual fine-tuning target in
-`config/model_config.yaml`), evaluated over a much larger, randomly-drawn split,
-run on Kaggle GPU. Every result file `clean_eval.py` writes is labeled with the
-exact `model_name` and `device` used so a smoke number can never be mistaken for
+speed, not a final reported number. The zero-shot 7B baseline above used the
+same smoke scale (9 examples) for the same reason — this is honestly a
+shared limitation of this project's real reported numbers, not just the OCR
+baseline. A larger, randomly-drawn evaluation split for Qwen2.5-VL-**7B**-
+Instruct (the actual fine-tuning target in `config/model_config.yaml`) would
+be a reasonable follow-up given more Kaggle time. Every result file
+`clean_eval.py` writes is labeled with the exact `model_name` and `device`
+used so a smoke number can never be mistaken for
 a reported one.

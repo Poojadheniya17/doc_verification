@@ -181,6 +181,46 @@ def build_sft_examples(genuine_manifest_path: str, tier_manifest_paths: dict[str
     return examples
 
 
+def balance_examples(examples: list[dict], target_ratio: float = 1.0) -> list[dict]:
+    """Oversamples the minority ("tampered") class by simple repetition so the
+    final genuine:tampered ratio is no worse than target_ratio (1.0 = exact 1:1).
+
+    Real motivation (post-v25): every training set this project has actually
+    built is severely imbalanced (e.g. 700 genuine vs 62 tampered across all 5
+    tiers, ~11:1), and three independent real evaluations (adversarial-rounds,
+    quantization-bench, leave-one-out) all show the model collapsing to always
+    predicting "genuine" — the easy, loss-minimizing shortcut available under
+    that imbalance. Repetition (rather than a weighted loss) was chosen because
+    it needs no changes to the collate/loss path — every repeated example is
+    still ordinary training data, just seen more often — which keeps this
+    change small and independently testable, per the project's "move fast,
+    don't gold-plate" standing instruction on this specific experiment.
+
+    Honest tradeoff, stated plainly: oversampling to exact 1:1 significantly
+    grows the training set (e.g. 62 tampered examples repeated ~11x each to
+    match 700 genuine -> ~1400 total, roughly double the ~719-762 examples
+    prior real runs trained on), which proportionally increases real Kaggle
+    training wall-clock time. This is accepted deliberately for this specific
+    experiment because eliminating the trivial majority-class optimum
+    entirely, not just weakening it, is the cleanest test of whether class
+    imbalance (rather than capacity) is the true driver of the collapse.
+
+    No-op (returns examples unchanged) if there are no tampered examples, or
+    if the existing ratio is already at or better than target_ratio.
+    """
+    genuine = [e for e in examples if e["target"]["tamper_verdict"] == "genuine"]
+    tampered = [e for e in examples if e["target"]["tamper_verdict"] == "tampered"]
+    if not tampered or not genuine:
+        return list(examples)
+
+    target_tampered_count = round(len(genuine) / target_ratio)
+    if target_tampered_count <= len(tampered):
+        return list(examples)
+
+    oversampled_tampered = [tampered[i % len(tampered)] for i in range(target_tampered_count)]
+    return genuine + oversampled_tampered
+
+
 def build_conversation(image_path: str, target: dict) -> list[dict]:
     """Chat-formatted SFT example: user turn is the image + instruction prompt,
     assistant turn is the target JSON serialized as the expected completion.
@@ -335,6 +375,13 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         train_examples = build_sft_examples(str(genuine_manifest), tier_manifest_paths, split="train")
     logger.info(f"Built {len(train_examples)} SFT training examples "
                 f"(environment={training_config['environment']})")
+
+    class_balance_cfg = training_config["sft"].get("class_balance")
+    if class_balance_cfg and class_balance_cfg.get("oversample_tampered_to_ratio"):
+        pre_count = len(train_examples)
+        train_examples = balance_examples(train_examples, class_balance_cfg["oversample_tampered_to_ratio"])
+        logger.info(f"Class-balanced {pre_count} -> {len(train_examples)} examples "
+                    f"(target ratio {class_balance_cfg['oversample_tampered_to_ratio']})")
 
     if training_config["environment"] == "local":
         logger.info("environment=local: stopping after data construction — this machine cannot load "

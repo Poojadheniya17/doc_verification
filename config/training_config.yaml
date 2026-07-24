@@ -68,6 +68,24 @@ sft:
   # Kaggle free tier gives ~30 GPU-hrs/week — 3 epochs on a few-thousand-sample
   # synthetic set is sized to fit comfortably within a single session (~9hr max runtime).
   # If dataset size grows materially, drop epochs before raising session count.
+  #
+  # CLASS BALANCING (added post-v25, real data-driven decision): every real
+  # training set built by build_sft_examples() across this whole project is
+  # severely imbalanced — e.g. 700 genuine vs 62 tampered across all 5 tiers
+  # (~11:1), or 700 vs 19 for the v24/v25 tier1+2-only composition (~35:1).
+  # Three independent real evaluations (adversarial-rounds, quantization-bench,
+  # leave-one-out — see results/tables/phase6_leave_one_out_summary.md) all
+  # show the same single-class ("always genuine") collapse, which this
+  # imbalance gives a trivial, easy training-loss-minimizing shortcut for.
+  # oversample_tampered_to_ratio: target genuine:tampered ratio after
+  # oversampling the minority (tampered) class by simple repetition — see
+  # sft_train.balance_examples(). 1.0 means exact 1:1, eliminating the
+  # trivial majority-class optimum entirely (the strongest, cleanest test of
+  # the class-imbalance hypothesis, at the real cost of a larger/slower
+  # training set — see balance_examples()'s docstring for the honest
+  # training-time tradeoff). Set to null/omit to disable balancing.
+  class_balance:
+    oversample_tampered_to_ratio: 1.0
 
 dpo:
   per_device_train_batch_size: 1

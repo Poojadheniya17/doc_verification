@@ -40,7 +40,7 @@ from src.eval.quantization_bench import run as run_quantization_bench
 from src.retrieval.case_index import build_index, case_text, load_index, save_index
 from src.training.checkpoint_utils import latest_checkpoint
 from src.training.sft_train import DEFAULT_TIER_NAMES, _apply_tier1_field_overrides, _default_tier_manifest_paths
-from src.training.sft_train import build_conversation, build_sft_examples
+from src.training.sft_train import balance_examples, build_conversation, build_sft_examples
 from src.utils.config_utils import load_yaml, resolve_paths
 from src.utils.image_utils import unique_stem
 from src.utils.kaggle_package import collect_referenced_paths, stage_package
@@ -346,6 +346,64 @@ def test_build_sft_examples_from_fixture_manifests(tmp_path):
         str(genuine_path), {"tier1_field_tamper": str(tier1_path), "tier2_splicing": str(tier2_path)}, split="train")
     assert len(two_tier_examples) == 3
     assert {e["tier"] for e in two_tier_examples} == {"genuine", "tier1_field_tamper", "tier2_splicing"}
+
+
+def _mk(tier: str, verdict: str) -> dict:
+    return {"image_path": f"{tier}.jpg", "target": {"tamper_verdict": verdict}, "tier": tier}
+
+
+def test_balance_examples_oversamples_to_1to1():
+    examples = [_mk("genuine", "genuine") for _ in range(10)] + [_mk("t1", "tampered"), _mk("t2", "tampered")]
+    balanced = balance_examples(examples, target_ratio=1.0)
+    genuine = [e for e in balanced if e["target"]["tamper_verdict"] == "genuine"]
+    tampered = [e for e in balanced if e["target"]["tamper_verdict"] == "tampered"]
+    assert len(genuine) == 10
+    assert len(tampered) == 10  # 2 real tampered examples repeated to reach 1:1
+    # every repeated example is still one of the 2 real ones, not fabricated data
+    assert set(e["image_path"] for e in tampered) == {"t1.jpg", "t2.jpg"}
+
+
+def test_balance_examples_noop_when_no_tampered():
+    examples = [_mk("genuine", "genuine") for _ in range(5)]
+    assert balance_examples(examples) == examples
+
+
+def test_balance_examples_noop_when_already_balanced_or_better():
+    examples = [_mk("genuine", "genuine") for _ in range(5)] + [_mk("t", "tampered") for _ in range(5)]
+    assert balance_examples(examples, target_ratio=1.0) == examples
+    # tampered already the majority -> no oversampling needed to reach 1:1
+    examples2 = [_mk("genuine", "genuine") for _ in range(2)] + [_mk("t", "tampered") for _ in range(8)]
+    assert balance_examples(examples2, target_ratio=1.0) == examples2
+
+
+def test_balance_examples_respects_non_1to1_target_ratio():
+    examples = [_mk("genuine", "genuine") for _ in range(10)] + [_mk("t", "tampered")]
+    balanced = balance_examples(examples, target_ratio=2.0)  # allow up to 2:1 genuine:tampered
+    tampered = [e for e in balanced if e["target"]["tamper_verdict"] == "tampered"]
+    assert len(tampered) == 5  # 10 genuine / 2.0 = 5 tampered needed for a 2:1 ratio
+
+
+def test_build_sft_examples_split_test(tmp_path):
+    genuine_manifest = {
+        "entries": [
+            {"path": "g0.jpg", "split": "train", "document_code": "x",
+             "ground_truth": {"name": "A B", "dob": "01.01.2000", "id_number": "X1",
+                               "address": None, "expiry": "01.01.2030"}},
+            {"path": "g1.jpg", "split": "test", "document_code": "x",
+             "ground_truth": {"name": "C D", "dob": "02.02.2000", "id_number": "X2",
+                               "address": None, "expiry": "02.02.2030"}},
+        ]
+    }
+    genuine_path = tmp_path / "genuine.json"
+    genuine_path.write_text(json.dumps(genuine_manifest), encoding="utf-8")
+    tier4_manifest = {"entries": [
+        {"success": True, "forged_image": "synth0_tier4.jpg",
+         "ground_truth": {"name": "E F", "dob": "03.03.2000", "id_number": "X3",
+                           "address": None, "expiry": "03.03.2030"}},
+    ]}
+    tier4_path = tmp_path / "tier4.json"
+    tier4_path.write_text(json.dumps(tier4_manifest), encoding="utf-8")
+    all_tiers = {"tier4_full_synthetic": str(tier4_path)}
 
     test_examples = build_sft_examples(str(genuine_path), all_tiers, split="test")
     # g1.jpg (split=test) has no tier1/2/3/5 derivatives in these fixtures (all keyed off

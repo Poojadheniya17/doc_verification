@@ -1,9 +1,30 @@
 # Project Status — resume point for a fresh session
 
-Last updated: 2026-07-24, overnight autonomous session (user asleep, full
-decision-making authority explicitly granted — see chat transcript for exact
-wording). **This is the current, most up-to-date summary — read this section
-first.**
+Last updated: 2026-07-24. **This is the current, most up-to-date summary —
+read this section first.**
+
+**LATEST DIRECTION FROM USER (2026-07-24, explicit, supersedes pure rank-
+chasing as the priority):** the leave-one-out result (0.000% accuracy across
+all 5 folds, every fold a single-class "genuine" predictor, ~15:1 genuine-to-
+tampered imbalance per fold) is a third independent confirmation of the
+collapse (alongside adversarial-rounds and quantization-bench) and points
+strongly at **class imbalance as the dominant cause, not just capacity/LoRA
+rank**. Agreed plan, explicitly requested by the user:
+1. Let the currently-running v25 kernel (testing restored LoRA
+   rank/image-size/seq-length capacity) finish — do NOT start any new
+   training run before this.
+2. Verify its real config via the saved `adapter_config.json` (ground truth
+   for r/alpha — the trainable-param count already suggests r=16, still
+   unconfirmed pending the actual file) and report the real result honestly.
+3. **Next single test after that (not started yet): class-balanced
+   training** — either oversampling tampered examples, undersampling
+   genuine examples, or a class-weighted loss — so the model can no longer
+   win by unconditionally predicting "genuine." This is now considered more
+   likely to be the real fix than further LoRA-rank tuning, per the user's
+   explicit reasoning and this project's own real evidence
+   (`results/tables/phase6_leave_one_out_summary.md` already independently
+   flagged class imbalance as the leading Future Work item before this
+   direction was confirmed by the user).
 
 **What's real and done as of this update:**
 - Phase 4 SFT training completed for real (kernel v24) — checkpoint committed

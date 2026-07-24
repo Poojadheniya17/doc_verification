@@ -382,3 +382,60 @@ class-imbalance hypothesis — it tests capacity in isolation, holding the
 same severe (~35:1) class imbalance constant. The next real test
 (adversarial-rounds against this checkpoint) answers: does more capacity
 alone fix the single-class collapse, or does the same imbalance still win?
+
+**Result of that test (real, verified): capacity alone does not fix the
+collapse.** See `results/tables/phase6_adversarial_rounds_summary.md`'s "v25
+capacity-only re-test" section — identical single-class collapse to v24,
+verified via real per-example verdict distributions, not just aggregate
+accuracy.
+
+## v26: class-balanced retrain — a real OOM, and a real honest correction
+
+The next experiment (per the user's explicit direction, since capacity alone
+was just shown not to work): class-balanced training, oversampling tampered
+examples to a real 1:1 ratio (`sft_train.balance_examples()`), using all 5
+forgery tiers and the safer, historically-validated r=8/512px config —
+deliberately NOT v25's r=16, to avoid conflating the balance variable with
+that still-unresolved memory anomaly.
+
+**Attempt 1 (r=8, 512px, seq=2048, all 5 tiers, balanced to 1:1) OOM'd
+immediately on the first training step**, real and clean:
+
+```
+2026-07-24 12:57:00,572 [INFO] sft_train: Built 762 SFT training examples
+2026-07-24 12:57:00,572 [INFO] sft_train: Class-balanced 762 -> 1400 examples
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 374.00 MiB.
+GPU 0 has a total capacity of 14.56 GiB of which 106.81 MiB is free.
+Including non-PyTorch memory, this process has 14.46 GiB memory in use.
+```
+
+The balancing logic itself worked exactly as intended (762 -> 1400 examples,
+matching the real local test run) — this is a real memory ceiling issue,
+independent of the class-balancing feature.
+
+**The honest, important correction this surfaced:** the r=8/512px/seq=2048
+combination that `model_config.yaml`'s "FINAL DECISION" comment describes as
+"a genuinely evidenced choice, not a new guess" had actually **never been
+tested with a real training run before this**. v25 was *intended* to test it
+but, due to the dataset-propagation-lag process error documented above,
+actually ran with a stale r=16 config instead. The "~7.26GiB safe" estimate
+that decision leaned on came from v19's real data — which predates
+`max_seq_length` even being wired into `collate()` (fixed in v23). v19
+trained on genuinely **uncapped** sequences and still fit; a run that
+actually truncates to 2048 tokens was never a like-for-like comparison. The
+inference was reasonable given what was known at the time; real data has now
+shown it wrong, and this document said as much would be corrected honestly
+if that happened.
+
+**Single, evidence-based fix applied** (per the standing "one well-reasoned
+attempt, don't loop on variations" instruction from the earlier v25
+investigation): `max_image_size` 512 -> 384, based on the real,
+internally-consistent **delta** between v19 (512px) and v20 (384px)'s
+original in-use numbers (14.55GiB vs 14.03GiB — a real ~520MiB difference,
+trustworthy as a delta even though each absolute number included the
+since-fixed ~7.29GiB leak equally). Applying that ~520MiB saving to v26's
+real 14.46GiB shortfall leaves ~600MB of margin under the 14.56GiB budget —
+reasoned from real data, not a blind guess. Attempt 2 is running; the real
+outcome (success or a second failure) will be reported honestly here
+regardless of which way it goes, per this project's standing rule against
+looping indefinitely on a resistant failure.

@@ -46,6 +46,18 @@ deliberately at r=8/512px (not v25's r=16) to isolate the balance variable.
    flagged class imbalance as the leading Future Work item before this
    direction was confirmed by the user).
 
+**v26 balanced-retrain ATTEMPT 1: real OOM, honestly corrected (2026-07-24).**
+r=8/512px/seq=2048 (the "final decision" config that v25 was supposed to
+test but actually ran with stale r=16 instead) OOM'd on its first real test:
+374MiB short, 14.46GiB in use. Balancing itself worked correctly (762 -> 1400
+examples, confirmed in the log). Honest correction: the "~7.26GiB safe"
+estimate this config was based on used v19's OLD data, which predates
+`max_seq_length` even being wired in — never actually a like-for-like
+comparison. Single evidence-based fix applied: `max_image_size` 512 -> 384
+(based on the real v19-vs-v20 delta, ~520MiB) — see
+`results/tables/phase4_sft_summary.md`'s "v26" section for full reasoning.
+Attempt 2 running now.
+
 **VALIDATION SCOPE DECISION (2026-07-24, explicit user instruction):** once
 class-balanced training completes, validate using **adversarial-rounds only**
 (fast, ~30 examples), NOT a full leave-one-out re-run (~11h). Reasoning

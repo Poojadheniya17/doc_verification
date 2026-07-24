@@ -26,6 +26,22 @@ rank**. Agreed plan, explicitly requested by the user:
    flagged class imbalance as the leading Future Work item before this
    direction was confirmed by the user).
 
+**VALIDATION SCOPE DECISION (2026-07-24, explicit user instruction):** once
+class-balanced training completes, validate using **adversarial-rounds only**
+(fast, ~30 examples), NOT a full leave-one-out re-run (~11h). Reasoning
+(user's, stated as a deliberate scoping call, to be repeated as such in the
+writeup): one complete, rigorous LOO result is already documented; re-running
+the full 5-fold version isn't necessary to confirm whether the collapse
+resolves. If adversarial-rounds shows real, varied predictions (not
+always-genuine): document as validation, and explicitly note in the writeup
+that a full LOO re-run on the balanced model is out of scope for now but
+would be the natural next step given more time — stated as a reasoned scoping
+decision, not an omission. If adversarial-rounds still shows collapse: report
+honestly, do NOT chase further fixes autonomously — stop and check with the
+user first. User's explicit priority: move fast but accurately — spend extra
+time only where it's actually necessary, no gold-plating, no quality
+compromise.
+
 **What's real and done as of this update:**
 - Phase 4 SFT training completed for real (kernel v24) — checkpoint committed
   at `checkpoints/sft_v24_final/`. Root cause of the entire v19-v23 OOM chain:

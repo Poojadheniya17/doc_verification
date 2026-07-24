@@ -547,10 +547,31 @@ restored capacity (r=16) let the model fit the training data better. This
 run used the **same tier1+tier2-only, 719-example composition as v24**
 (confirmed via the log), so it does not yet test the class-imbalance
 hypothesis below — it isolates capacity alone, holding the same severe
-class imbalance constant. Whether that extra capacity also resolves the
-single-class collapse (as opposed to just lowering training loss) is a
-separate, real question, tested next via adversarial-rounds against this
-checkpoint.
+class imbalance constant.
+
+**That isolated test was run: capacity alone does not fix the collapse.**
+Adversarial-rounds was re-run against the v25 checkpoint, holding the fixed
+30-example eval set and the same tier1+tier2-only training composition
+constant. The result, verified against the real per-example raw output (not
+just the aggregate accuracy number): **identical to v24's collapse, round
+for round.** Round 0: 33.3% accuracy, 30/30 predictions "genuine". Round 1
+(retrained on 20 mined failures): 66.7%, 30/30 predictions "tampered". Round
+2 (retrained on 10 mined failures): 33.3%, 30/30 predictions "genuine" again
+— the exact same oscillating single-class pattern, same accuracy numbers, as
+v24's r=4 run. See `phase4_sft_summary.md` and
+`phase6_adversarial_rounds_summary.md`'s "v25 capacity-only re-test" section
+for the full real numbers.
+
+This is real, direct evidence that **capacity is not sufficient to fix the
+collapse on its own** — the same severe class imbalance (~700 genuine vs 19
+tampered, ~35:1) produces the identical failure mode regardless of LoRA
+rank. It doesn't rule out capacity as *a* contributing factor (v25's lower
+training loss is still a real, separate positive signal), but for this
+project's remaining scope, it is the more decision-relevant finding: it
+directly motivates the class-balanced training experiment below,
+deliberately run at the safer r=8/512px config (not v25's still-unresolved
+r=16) so the balance variable isn't conflated with that open memory
+question.
 
 **Whatever that result turns out to be, the leave-one-out result above
 already implies a real limit on what capacity restoration alone can fix**:

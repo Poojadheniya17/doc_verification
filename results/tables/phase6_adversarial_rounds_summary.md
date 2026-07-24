@@ -81,3 +81,44 @@ smoothed over. It directly informs:
   — are the primary, well-evidenced levers for a stronger model, not further
   algorithmic changes to the adversarial-rounds or leave-one-out procedures
   themselves.
+
+## v25 capacity-only re-test: identical collapse, real evidence against capacity alone
+
+Once v25 (LoRA r=16, a real, verified capacity-restoration checkpoint — see
+`phase4_sft_summary.md`'s "v25" section) completed, this exact adversarial-rounds
+procedure was re-run against it as Round 0's baseline, holding everything else
+constant — same fixed 30-example eval set, same tier1+tier2-only, ~700
+genuine/19 tampered (~35:1) training-data composition as v24. This isolates
+one question: does more capacity alone (without touching the class imbalance)
+fix the collapse?
+
+**No. The result is essentially identical to v24's, verified down to the
+real per-example verdict distribution, not just the aggregate accuracy:**
+
+| Round | Retrained on | Accuracy | Predicted-verdict distribution (real, from raw per-example output) |
+|---|---|---|---|
+| 0 (v25 checkpoint, r=16, no retrain) | — | **33.3%** | genuine: **30/30**, tampered: 0 |
+| 1 | 20 failures mined from round 0 | **66.7%** | tampered: **30/30**, genuine: 0 |
+| 2 | 10 failures mined from round 1 | **33.3%** | genuine: **30/30**, tampered: 0 |
+
+The accuracy sequence (33.3% -> 66.7% -> 33.3%) matches v24's run exactly,
+and — checked directly against the real per-example output this time, not
+assumed from the aggregate number — every single round is still a pure
+single-class predictor across all 30 examples, with the same genuine ->
+tampered -> genuine oscillation pattern as v24.
+
+**Honest conclusion: capacity alone (LoRA r=16 vs r=4) does not fix the
+collapse.** This is real, direct evidence for the class-imbalance hypothesis
+over the capacity hypothesis — the same severely imbalanced training data
+(700 genuine vs 19 tampered, ~35:1) produces the identical failure mode
+regardless of how much LoRA capacity is available to the adapter. It does
+not rule out capacity as *a* contributing factor entirely (v25's own
+training-loss plateau was measurably lower than v24's, a real, separate
+positive signal — see `phase4_sft_summary.md`), but it demonstrates capacity
+is not sufficient on its own to fix the collapse, which is the more decision-
+relevant finding for this project's remaining scope. This directly motivates
+and justifies the next real experiment: class-balanced training (oversample
+tampered examples to 1:1 — see `sft_train.balance_examples()`), tested next
+while holding the safer, extensively-validated r=8/512px config constant to
+avoid conflating the balance variable with v25's own unresolved memory
+anomaly.

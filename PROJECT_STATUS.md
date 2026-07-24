@@ -25,6 +25,17 @@ rank**. Agreed plan, explicitly requested by the user:
    committed to git (safetensors is 141.8MB, over GitHub's 100MB limit; real
    weights live in Kaggle kernel output + local disk).
 2. ~~Verify its real config~~ — **DONE**, see above.
+**CAPACITY-ONLY TEST RESULT (2026-07-24): capacity alone does NOT fix the
+collapse.** Adversarial-rounds re-run against v25 (r=16), holding the same
+tier1+tier2-only imbalanced training data constant: identical collapse to
+v24, verified via real per-example verdict distributions — Round 0: 30/30
+"genuine" (33.3% acc), Round 1: 30/30 "tampered" (66.7% acc), Round 2: 30/30
+"genuine" again (33.3% acc). Same numbers, same oscillation pattern as v24.
+Real evidence FOR the class-imbalance hypothesis over capacity — see
+`results/tables/phase6_adversarial_rounds_summary.md`'s "v25 capacity-only
+re-test" section. This directly motivates the balanced-training run below,
+deliberately at r=8/512px (not v25's r=16) to isolate the balance variable.
+
 3. **Next single test after that (not started yet): class-balanced
    training** — either oversampling tampered examples, undersampling
    genuine examples, or a class-weighted loss — so the model can no longer

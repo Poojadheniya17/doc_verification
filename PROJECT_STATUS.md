@@ -1,17 +1,65 @@
 # Project Status — resume point for a fresh session
 
-Last updated: 2026-07-23 (v24). **Phase 4 SFT training completed successfully
-for the first time.** Root cause of the entire v19-v23 OOM chain: Phase 3's
-7B model was never freed before Phase 4 loaded the 3B model (clean_eval.py
-caches its model at module scope; kernel_driver.py never cleared it), so
-every "memory cut" from v19-v23 was shrinking the wrong side of the ledger.
-Fixed in v24 by adding explicit cleanup between phases — see "Where Phase 4
-actually stands" below for the full story and real training numbers.
+Last updated: 2026-07-24, overnight autonomous session (user asleep, full
+decision-making authority explicitly granted — see chat transcript for exact
+wording). **This is the current, most up-to-date summary — read this section
+first.**
 
-**If you are a fresh Claude session picking this up:** read this whole file
-first, then check `git log --oneline -10` and the Kaggle kernel status
-(command below) before doing anything else — this file may be slightly
-stale if the session ended mid-task.
+**What's real and done as of this update:**
+- Phase 4 SFT training completed for real (kernel v24) — checkpoint committed
+  at `checkpoints/sft_v24_final/`. Root cause of the entire v19-v23 OOM chain:
+  a leftover 7B model in memory, never freed between Phase 3 and Phase 4 in
+  the same Kaggle session (confirmed via a real before/after GPU diagnostic).
+- Two more real bugs found and fixed the same night, both invisible locally,
+  both surfaced only on real Kaggle runs: (1) tier manifest filename
+  convention mismatch (silently produced 0 tier examples, no error), (2)
+  Windows-native backslash paths baked into every locally-generated manifest
+  (hard `FileNotFoundError` on Linux Kaggle). Both root-caused, fixed at the
+  source, regression-tested against real repo data.
+- **Adversarial rounds: real result in hand.** Headline accuracy 33.3% →
+  66.7% → 33.3% across 3 rounds — but the real finding is every round is a
+  single-class predictor (see `results/tables/phase6_adversarial_rounds_summary.md`).
+  Real evidence for a capacity-limitation hypothesis (LoRA r=4 + 719 training
+  examples), not just a training-curve curiosity.
+- Phase 3 zero-shot 7B baseline real result recovered and committed (was run
+  weeks ago but never saved into the repo) — 66.7% accuracy, n=9, real
+  high-recall/high-false-positive pattern documented.
+- `financial_risk_reasoning.py` (Phase 7 decision layer): already fully
+  implemented and unit-tested (found already done from earlier work).
+- Streamlit demo app built with a polished, professional custom-CSS UI
+  (verdict badges, confidence gauge, field grid, retrieval case cards,
+  color-coded decision banner) — tested working end-to-end in a browser.
+  Replays real captured Kaggle predictions (documented design decision: this
+  dev machine has no GPU); retrieval + decision layer run live.
+- Results notebook (`notebooks/03_results_analysis.ipynb`) populated with 3
+  real charts (Phase 3 baseline, Phase 4 loss curve, Phase 6 adversarial
+  rounds) — executed end-to-end, no fabricated data. Leave-one-out and
+  quantization cells are real, working code that prints an honest PENDING
+  message until their real result files exist.
+- Full paper-style writeup (`writeup/project_report.md`) written with real
+  results throughout and the complete honest debugging saga as its own
+  section, per explicit standing instruction.
+- README.md updated (was badly stale, said "no trained model yet").
+
+**What's still running / pending as of this update:**
+- `doc-verification-leave-one-out` Kaggle kernel: RUNNING (5-fold leave-one-out,
+  ~11h job, started ~19:15). Check status before assuming it's still going.
+- `doc-verification-quantization-bench` Kaggle kernel: RUNNING (re-pushed
+  after fixing a real `torchao`/`peft` version-compatibility crash — see
+  kernel_driver.py's comment for the exact fix and why).
+- Demo app's `results/sample_outputs/captured_predictions.json` is NOT yet
+  populated with real data (a placeholder was tested locally, then deleted —
+  never committed). `finetuned_eval.score_prediction()` was extended to
+  capture full parsed output for this purpose, but neither currently-running
+  Kaggle job's code was already loaded with that extension when they started
+  (code changes don't hot-reload into a running kernel) — a small dedicated
+  capture kernel run (a handful of images through the trained checkpoint)
+  once a GPU slot frees would populate this properly. Low priority relative
+  to the two jobs above.
+
+**If you are a fresh Claude session picking this up:** read this whole
+section, then check `git log --oneline -10` and both Kaggle kernels' status
+(commands below) before doing anything else.
 
 ## Repo / infra pointers
 

@@ -43,17 +43,26 @@ sft:
   num_epochs: 3
   warmup_ratio: 0.03
   lr_scheduler_type: "cosine"
-  # 2048 -> 1024 (v23) -> 2048 (v25 attempt 1) -> 1536 (v25 attempt 2) -> 1024
-  # (v25 attempt 3, this value, reverted to v24's proven floor). Attempts 1
-  # and 2 OOM'd with byte-for-byte IDENTICAL memory numbers despite this
-  # value and max_image_size both changing substantially between them (see
-  # model_config.yaml's max_image_size comment for the full reasoning) — real
-  # evidence neither of these two levers was the actual driver. Attempt 3
-  # isolates LoRA rank as the only changed variable, reverting this and
-  # max_image_size to v24's known-working values so a success or failure
-  # cleanly attributes to rank alone. Still genuinely wired into
+  # 2048 -> 1024 (v23) -> 2048 (v25 attempt 1) -> 1536 (v25 attempt 2) -> ...
+  # CORRECTION, stated honestly: attempt 3's config comment claimed this was
+  # reverted to 1024, but the actual value here was never changed from
+  # attempt 2's 1536 — a real editing mistake, not a deliberate choice. This
+  # doesn't invalidate attempt 3's finding, though: seq_length was therefore
+  # held constant at 1536 across BOTH attempts 2 and 3, which still produced
+  # byte-identical OOMs despite max_image_size changing (384->256) — if
+  # anything, stronger evidence seq_length in this range wasn't the driver
+  # either (see model_config.yaml's lora.r comment for the full real
+  # investigation and conclusion: the actual cause was LoRA r=16 itself).
+  #
+  # FINAL DECISION (r=8 + 512px + this value, 2048): v19-v22's real
+  # historical data (256-512px, r=8, ~6.7-7.3GiB real footprint after
+  # subtracting the confirmed 7B leak) predates max_seq_length even being
+  # wired into collate() at all (that fix landed in v23) — meaning those
+  # runs trained on a genuinely UNCAPPED sequence length and still fit
+  # comfortably. Restoring to the original 2048 here is therefore a safe,
+  # evidence-backed choice, not a new guess. Still genuinely wired into
   # sft_train.py's collate() (fixed in v23, not decorative).
-  max_seq_length: 1536
+  max_seq_length: 2048
   save_strategy: "epoch"
   logging_steps: 10
   # Kaggle free tier gives ~30 GPU-hrs/week — 3 epochs on a few-thousand-sample

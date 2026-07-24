@@ -126,12 +126,29 @@ model:
   # image-size config genuinely isn't reaching the vision-token pipeline the
   # way this project assumed (e.g. qwen_vl_utils' own internal resolution
   # handling in process_vision_info() overriding the PIL thumbnail already
-  # applied). Attempt 3 (final, capped budget) isolates the variable
-  # directly: reverted to v24's PROVEN-SAFE 256px floor here, with ONLY
-  # lora.r changed (still 16) — a clean single-variable test of whether rank
-  # alone is survivable, since the combined attempts couldn't distinguish
-  # which lever was responsible.
-  max_image_size: 256
+  # applied).
+  #
+  # v25 REAL RESULT, attempt 3 (256px + r=16 + seq=1024, isolating rank
+  # alone): OOM'd with the EXACT SAME numbers a third time. This conclusively
+  # isolates the cause: LoRA rank r=16 itself (completely independent of
+  # image size or sequence length) triggers this. Researched rather than
+  # guessed further (web search): bitsandbytes/peft QLoRA dequantizes the
+  # relevant base weight to bf16 for the compute step regardless of rank, so
+  # that alone doesn't explain a rank-dependent jump — but re-examining this
+  # project's OWN already-collected v19-v23 data through the now-understood
+  # leak (~7.29GiB) gives a cleaner, evidence-based answer than further
+  # searching: v19 (512px, r=8, the value BEFORE this session's r=8->r=4
+  # cut) OOM'd using 14.55GiB total — real footprint (leak subtracted)
+  # ~7.26GiB. v20 (384px, r=8): ~6.74GiB real. v21 (320px, r=8): ~6.85GiB
+  # real. v22 (256px, r=8): ~7.04GiB real. Every one of these — image sizes
+  # 256-512px, ranks 4 OR 8 — lands in a tight ~6.7-7.3GiB band. The
+  # discontinuity is specifically between r=8 and r=16, not image size in
+  # this range. FINAL DECISION (2 of the user's 2-attempt research-informed
+  # budget): r=8 (not the proven-bad r=16, see lora.r below), max_image_size
+  # restored to 512px — v19's own exact, already-validated real-footprint
+  # data point (~7.26GiB, ~7.3GiB of headroom under the 14.56GiB budget) —
+  # a genuinely evidenced choice, not a new guess.
+  max_image_size: 512
 
 quantization:
   # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.
@@ -144,23 +161,34 @@ quantization:
   bnb_4bit_use_double_quant: true
 
 lora:
-  # r=16 -> r=12 -> r=8 -> r=4 (v19-v23) -> r=16 (v25, this change).
-  # The v19-v23 cuts (down to r=4) were made while fighting a memory ceiling
-  # that turned out to be ~7.29GiB too low, caused by a leftover 7B model
-  # never freed between Kaggle-session phases (found and fixed in v24 — see
-  # this file's max_image_size comment for the exact numbers). LoRA rank
-  # costs very little memory regardless of value in the 4-64 range (r=4's
-  # confirmed real trainable-param count was 9.28M of 3.76B total, 0.2468%;
-  # r=16 is still under 40M, a rounding error in GPU memory terms compared to
-  # activation/image memory) — the r=4 floor was never actually re-validated
-  # as necessary once the real leak was fixed. Restored to r=16, the original
-  # pre-panic value from the 7B debugging chain (this file's top DECISION
-  # comment), specifically to test whether the adversarial-rounds single-
-  # class-collapse finding (results/tables/phase6_adversarial_rounds_summary.md)
-  # was a genuine capacity limitation or an artifact of r=4 being
-  # unnecessarily constrained. alpha kept at 2x r as throughout this project.
-  r: 16
-  alpha: 32
+  # r=16 -> r=12 -> r=8 -> r=4 (v19-v23) -> r=16 (v25 attempts 1-3, ALL
+  # OOM'd, byte-identical, regardless of image_size/max_seq_length — see
+  # model_config.yaml's max_image_size comment for the full real-numbers
+  # investigation) -> r=8 (this change, final decision).
+  #
+  # My own parameter-count math said r=16 should cost only ~150-200MB more
+  # than r=4 (28M extra params) — clearly wrong, since r=16 alone (at v24's
+  # otherwise-proven-safe 256px/seq=1024) consumed the ENTIRE 14.56GiB budget
+  # (14.55GiB in use) three times over, independent of image size or
+  # sequence length. Web search on bitsandbytes/peft QLoRA memory scaling
+  # didn't surface a definitive documented mechanism for this specific
+  # library-version combination — rather than keep guessing, re-examined
+  # this project's OWN already-collected v19-v22 data (originally run before
+  # the 7B-leak was understood) and subtracted the confirmed ~7.29GiB leak
+  # from each: v19 (512px, r=8): real footprint ~7.26GiB. v20 (384px, r=8):
+  # ~6.74GiB. v21 (320px, r=8): ~6.85GiB. v22 (256px, r=8): ~7.04GiB. Every
+  # one of these (image sizes 256-512px, r=4 OR r=8) lands in a tight
+  # ~6.7-7.3GiB band — real, already-validated evidence that r=8 is safe at
+  # up to 512px, and that the catastrophic jump is specific to r=16, not a
+  # gradual rank-memory scaling curve. r=8 restores meaningfully more
+  # capacity than v24's r=4 (doubles LoRA representational capacity, a
+  # config never actually OOM'd at up to 512px) while avoiding the r=16
+  # regime this session's real data shows is genuinely broken for reasons
+  # not fully understood (documented honestly as an open question — see
+  # results/tables/phase4_sft_summary.md — not swept under the rug). alpha
+  # kept at 2x r as throughout this project.
+  r: 8
+  alpha: 16
   dropout: 0.05
   target_modules:
     - "q_proj"

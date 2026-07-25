@@ -539,6 +539,36 @@ learned in that re-run.
 
 ## Limitations
 
+- **The model never generates the "explanation" field, across every
+  checkpoint (v24, v25, v26).** Confirmed on the 7 examples captured for
+  the demo gallery (0/7) and re-checked against the raw eval output already
+  collected for v24, v25, and v26's adversarial-rounds runs (0/30 in every
+  case). Root cause, checked in order from cheapest to most involved: the
+  SFT training targets built by `build_sft_examples()` never include an
+  `"explanation"` key at all — every target dict is built from each
+  manifest's `ground_truth` (which only ever has `name`/`dob`/`id_number`/
+  `address`/`expiry`) plus `tamper_verdict` and `tamper_regions` set
+  explicitly. No manifest in this project carries any authored narrative
+  text to source one from either. So across all 719-1400 training examples
+  in every checkpoint, the model never once saw a training target with that
+  key populated — it's not a generation cutoff (every captured response
+  parses as complete, valid JSON via a strict `json.loads()`, no
+  truncation-repair logic involved) and it's not a prompting gap (`SFT_PROMPT`
+  does explicitly ask for `"explanation": one sentence explaining your
+  tamper_verdict`). The model is just doing exactly what it was trained to
+  do: reproducing the JSON shape it was shown, which never included this
+  field, regardless of what the prompt asks for.
+
+  This is fixable, but not cheaply: it needs real per-tier template logic
+  (e.g. "field tampering detected in `id_number`" for tier1, "photo appears
+  spliced from another document" for tier2, and so on, built from metadata
+  each manifest already has — tampered field names, bbox regions, tier
+  type) wired into `build_sft_examples()`, then a full retrain from
+  scratch, since this can't be patched into an existing checkpoint. Given
+  v26's retrain alone took ~5.5 hours on a free-tier Kaggle T4, this is a
+  real follow-up experiment, not a quick correction — documented here as a
+  known limitation rather than fixed live.
+
 - **The adversarial-rounds retraining loop is fragile, even on a
   checkpoint that discriminates well.** v26's base checkpoint shows real,
   varied, mostly-correct predictions, but 3-epoch retrains on 4-20 mined
@@ -588,6 +618,11 @@ learned in that re-run.
 
 ## Future work
 
+- **Add real explanation text to the training targets and retrain.** The
+  model never generates the `explanation` field because it never once saw
+  it populated during training — see Limitations. Needs per-tier template
+  logic in `build_sft_examples()` plus a full retrain; a real follow-up
+  experiment, not a quick patch.
 - **Fix the adversarial-rounds retraining loop's fragility** — a smaller
   learning rate for mini-retrains, or mixing mined failures back in with a
   slice of the original training set, so the loop stops erasing what the

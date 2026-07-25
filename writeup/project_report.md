@@ -585,6 +585,55 @@ which this session's evidence suggests is necessary but likely not
 sufficient on its own. This is the next real experiment this project runs
 (see the section below on class-balanced training).
 
+## Class-balanced training: a real OOM, an honest correction, and a real success
+
+The next experiment, run at r=8/512px (deliberately *not* v25's r=16, to
+avoid conflating the balance variable with that unresolved memory anomaly):
+oversample tampered examples to a real 1:1 ratio (`sft_train.balance_examples()`,
+unit-tested), using all 5 forgery tiers rather than just tier1+tier2 — real
+local data showed 700 genuine vs 62 tampered before balancing (762 total),
+1400 after.
+
+**Attempt 1 OOM'd immediately on the first training step** (374MiB short,
+14.46GiB in use) — a genuinely useful, honest surprise. It turned out the
+r=8/512px/`max_seq_length`=2048 combination had actually never been tested
+with a real training run before this: v25 was *intended* to test it but ran
+with a stale r=16 config instead, due to the dataset-propagation-lag mistake
+described above. The "~7.26GiB safe" estimate that config leaned on came
+from v19's data, which predates `max_seq_length` even being wired into
+`collate()` (fixed in v23) — v19 trained on genuinely uncapped sequences and
+still fit, so it was never a like-for-like comparison to a run that actually
+truncates to 2048 tokens. This is documented as an honest correction, not
+smoothed over: the earlier "final decision" reasoning was wrong, and real
+data is what caught it.
+
+One well-reasoned fix was applied (per the standing "one attempt, don't loop
+on variations" instruction): `max_image_size` 512 -> 384, based on the real,
+internally-consistent delta between v19 (512px) and v20 (384px)'s original
+in-use numbers (~520MiB) — not a blind guess.
+
+**Attempt 2 succeeded: 264/264 steps, all 3 epochs, no crash**, with real
+margin this time (12.94GB reserved, ~1.6GB of headroom under the 14.56GiB
+budget). Real adapter_config.json confirms r=8, `lora_alpha=16` as intended.
+Checkpoint size: 74,405,904 bytes (~71MB), committed to git in full (under
+GitHub's 100MB limit). Training wall-clock: 19553s (~5h26m) — considerably
+longer than v24/v25's ~2.3h, as expected given the balanced set's ~1.9x more
+examples (1400 vs 719-762).
+
+The loss plateau (~2.38-2.45) is notably *higher* than v24's (~1.25-1.26) and
+v25's (~1.217-1.22). Stated as an honest hypothesis, not a claim: this is
+plausibly a good sign, not a worse result — v24 and v25 both trained on
+severely imbalanced data where "always predict genuine" is a low-loss
+shortcut; this run's genuinely balanced data removes that shortcut, so a
+higher loss could reflect the model actually attempting real discrimination,
+a harder task. The loss number alone cannot distinguish this from "the model
+is just struggling more broadly" — the decisive test is whether the
+resulting model's real predictions are varied rather than single-class,
+covered next.
+
+See `results/tables/phase4_sft_summary.md`'s "v26" section for the complete
+real numbers behind this summary.
+
 ## Limitations
 
 - **No evidence of learned tamper discrimination at the configuration this

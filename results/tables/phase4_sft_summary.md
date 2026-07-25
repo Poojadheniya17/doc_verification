@@ -435,7 +435,48 @@ original in-use numbers (14.55GiB vs 14.03GiB — a real ~520MiB difference,
 trustworthy as a delta even though each absolute number included the
 since-fixed ~7.29GiB leak equally). Applying that ~520MiB saving to v26's
 real 14.46GiB shortfall leaves ~600MB of margin under the 14.56GiB budget —
-reasoned from real data, not a blind guess. Attempt 2 is running; the real
-outcome (success or a second failure) will be reported honestly here
-regardless of which way it goes, per this project's standing rule against
-looping indefinitely on a resistant failure.
+reasoned from real data, not a blind guess.
+
+**Attempt 2 (r=8, 384px, seq=2048) completed successfully — 264/264 steps,
+all 3 epochs, no crash:**
+
+```
+{'train_runtime': 19553.0763, 'train_samples_per_second': 0.215,
+ 'train_steps_per_second': 0.014, 'train_loss': 2.675908681118127, 'epoch': 3.0}
+=== Phase 4 (v26) peak GPU memory: 12.36 GB allocated, 12.94 GB reserved ===
+```
+
+- Total training wall-clock: **19553s ≈ 5h 26m** (real, considerably longer
+  than v24/v25's ~2.3h, as expected — the balanced set has ~1.9x more
+  examples: 1400 vs 719/762).
+- Peak GPU memory: **12.94GB reserved**, real headroom of ~1.6GB under the
+  14.56GiB budget — the 384px fix worked with real margin, confirming the
+  reasoning above rather than just getting lucky.
+- `trainable params: 18,576,384 || all params: 3,773,199,360` — confirms
+  r=8, exactly half of v25's r=16 (37.15M), as expected.
+- `train_loss` (Trainer's running average over the whole run, including the
+  high early-step losses) = **2.6759** — the loss trajectory itself: 7.16
+  (0.11) -> 4.07 (0.23) -> 2.68 (0.34) -> 2.50 (0.46), then a **plateau
+  around 2.38-2.45** from epoch ~0.6 onward, ending at 2.42 (2.96).
+- **Real adapter_config.json (ground truth):** `r: 8, lora_alpha: 16,
+  target_modules: [k_proj, o_proj, up_proj, v_proj, q_proj, down_proj,
+  gate_proj]` — confirms the intended config was actually used this time.
+- **Real checkpoint file size: 74,405,904 bytes (~71MB)** — under GitHub's
+  100MB limit, so the full adapter (not just metadata) is committed to git,
+  same as v24.
+
+**Honest comparison of this plateau to v24/v25's, and what it does and
+doesn't mean:** this run's loss plateau (~2.38-2.45) is notably *higher*
+than both v24's (r=4, imbalanced, ~1.25-1.26) and v25's (r=16, imbalanced,
+~1.217-1.22). This is not necessarily a worse result — it's expected and
+even a good sign: v24 and v25 both trained on severely imbalanced data
+(~700 genuine vs ~19 tampered) where "always predict genuine" is a very
+easy, very-low-loss shortcut the model can settle into. This run's data is
+genuinely balanced (700 genuine vs 700 real+oversampled tampered), so that
+shortcut no longer exists — a higher loss here could reflect the model
+actually being forced to attempt real discrimination, which is a harder
+task, not a worse-trained model. **This is a hypothesis, not a claim** — the
+loss number alone cannot distinguish "learning to discriminate" from "just
+struggling more broadly." The real, decisive test is whether the resulting
+model's predictions are actually varied (not single-class) on held-out
+examples — tested next via adversarial-rounds, exactly as planned.

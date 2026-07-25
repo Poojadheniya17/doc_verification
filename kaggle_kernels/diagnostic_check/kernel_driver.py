@@ -46,7 +46,11 @@ for tier in ALL_TIERS:
           f"full_name({wrong_path.name})_exists={wrong_path.is_file()}", flush=True)
 
 checkpoint_path = INPUT_ROOT / "checkpoints" / "sft_v24_final" / "adapter_model.safetensors"
-print(f"=== checkpoint exists: {checkpoint_path.is_file()} ===", flush=True)
+print(f"=== v24 checkpoint exists: {checkpoint_path.is_file()} ===", flush=True)
+v25_checkpoint_path = INPUT_ROOT / "checkpoints" / "sft_v25_final" / "adapter_model.safetensors"
+print(f"=== v25 checkpoint exists: {v25_checkpoint_path.is_file()} ===", flush=True)
+if v25_checkpoint_path.is_file():
+    print(f"=== v25 checkpoint size: {v25_checkpoint_path.stat().st_size} bytes (expect 148712776) ===", flush=True)
 
 print("=== Manifest path-separator check (backslash = broken on Linux) ===", flush=True)
 import json  # noqa: E402
@@ -79,5 +83,6 @@ with open(INPUT_ROOT / "config" / "training_config.yaml", encoding="utf-8") as f
 print(f"model_config.yaml: max_image_size={_mc['model']['max_image_size']}, "
       f"lora.r={_mc['lora']['r']}, lora.alpha={_mc['lora']['alpha']}", flush=True)
 print(f"training_config.yaml: sft.max_seq_length={_tc['sft']['max_seq_length']}", flush=True)
+print(f"training_config.yaml: sft.class_balance={_tc['sft'].get('class_balance')}", flush=True)
 
 print("Done.", flush=True)

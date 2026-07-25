@@ -49,6 +49,15 @@ checkpoints/*
 !checkpoints/sft_v25_final/adapter_config.json
 !checkpoints/sft_v25_final/README.md
 
+# v26 (class-balanced retrain, r=8/384px/seq=2048, tampered examples
+# oversampled to a real 1:1 ratio — see results/tables/phase4_sft_summary.md's
+# "v26" section). r=8's adapter is ~71MB, under GitHub's 100MB limit, so the
+# full safetensors is versioned here, same as v24.
+!checkpoints/sft_v26_balanced/
+!checkpoints/sft_v26_balanced/adapter_config.json
+!checkpoints/sft_v26_balanced/adapter_model.safetensors
+!checkpoints/sft_v26_balanced/README.md
+
 # Local Hugging Face model cache (multi-GB; re-downloaded via snapshot_download, not committed)
 .hf_cache/
 

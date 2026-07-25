@@ -56,7 +56,16 @@ estimate this config was based on used v19's OLD data, which predates
 comparison. Single evidence-based fix applied: `max_image_size` 512 -> 384
 (based on the real v19-vs-v20 delta, ~520MiB) — see
 `results/tables/phase4_sft_summary.md`'s "v26" section for full reasoning.
-Attempt 2 running now.
+**Attempt 2 (384px) SUCCEEDED (2026-07-25): 264/264 steps, all 3 epochs, no
+crash.** Real peak memory 12.94GB reserved (real margin under the 14.56GiB
+budget, confirming the fix's reasoning). r=8 confirmed via real
+adapter_config.json. Checkpoint: 74,405,904 bytes (~71MB), committed to git
+in full (under the 100MB limit). Loss plateaued ~2.38-2.45 — notably higher
+than v24/v25's imbalanced-data plateaus (~1.22-1.26), plausibly because the
+"always genuine" shortcut no longer exists on balanced data — a real
+hypothesis, not a claim; the decisive test is the adversarial-rounds
+validation next. See `results/tables/phase4_sft_summary.md`'s "v26" section
+for full real numbers.
 
 **VALIDATION SCOPE DECISION (2026-07-24, explicit user instruction):** once
 class-balanced training completes, validate using **adversarial-rounds only**

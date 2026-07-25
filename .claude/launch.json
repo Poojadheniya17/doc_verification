@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "streamlit-demo",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "streamlit", "run", "app/demo_app.py", "--server.headless", "true"],
+      "port": 8501
+    },
+    {
+      "name": "static-demo",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8502", "--directory", "app_static"],
+      "port": 8502
+    }
+  ]
+}

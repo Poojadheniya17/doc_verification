@@ -19,6 +19,21 @@ testing (leave-one-out, adversarial rounds, quantization benchmarking) run
 against them, and a class-imbalance fix that actually changed the results. See
 [Build status](#build-status) and [Results so far](#results-so-far) below.
 
+## Demo
+
+`app_static/index.html` — a self-contained static page, open it directly or
+serve the folder (`python -m http.server 8502 --directory app_static`). No
+server-side model inference: it replays real captured predictions from the
+v26 checkpoint through the real retrieval and decision-layer code, precomputed
+once by `app_static/precompute_demo_data.py` and baked into the page rather
+than recomputed on every load.
+
+There's also a Streamlit version (`app/demo_app.py`, `streamlit run
+app/demo_app.py`) from an earlier pass — kept since it's still real and
+functional, but the static page is the one built for actually showing this
+off: Streamlit's full-script-rerun model has a hard ceiling on UI polish
+(no persistent DOM, no real animation) that a plain HTML/CSS/JS page doesn't.
+
 ## System overview
 
 ```
@@ -171,7 +186,7 @@ create an API token at kaggle.com/settings, place `kaggle.json` at
 | 8 | DPO + retrieval | Retrieval done, live in the demo app; DPO not attempted |
 | 9 | Quantization benchmarking | Done |
 | 10 | Layer 3 (optional) | Not attempted, as planned |
-| 11 | Demo + writeup | Streamlit demo built; writeup written |
+| 11 | Demo + writeup | Static demo built ([app_static/](app_static/)); writeup written |
 
 ## Results so far
 

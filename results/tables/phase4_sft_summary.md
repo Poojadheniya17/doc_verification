@@ -1,405 +1,239 @@
-# Phase 4 SFT Summary
+# Phase 4 SFT summary
 
 ## What was built
 
-- `src/training/sft_train.py`: builds SFT training examples from the genuine +
-  Tier 1/2 manifests, formats them as Qwen2.5-VL chat conversations (image +
-  extraction/tamper-verdict/localization JSON target), and — when
-  `environment=kaggle` — loads Qwen2.5-VL-7B-Instruct in 4-bit (QLoRA per
-  `config/model_config.yaml`), wraps it with a LoRA adapter, and fine-tunes via
-  `transformers.Trainer`.
-- `src/training/checkpoint_utils.py`: adapter-only save/load (QLoRA only trains
-  the LoRA weights, so checkpoints are a few tens of MB, not the full base
-  model) plus step-numbered checkpoint discovery for resuming.
+- `src/training/sft_train.py`: builds SFT training examples from the genuine
+  and forgery-tier manifests, formats them as Qwen2.5-VL chat conversations
+  (image + extraction/tamper-verdict/localization JSON target), and — when
+  `environment=kaggle` — loads the model in 4-bit (QLoRA per
+  `config/model_config.yaml`), wraps it with a LoRA adapter, and fine-tunes
+  via `transformers.Trainer`.
+- `src/training/checkpoint_utils.py`: adapter-only save/load plus
+  step-numbered checkpoint discovery for resuming.
 
-## What was actually run locally (and what wasn't)
+## Local validation
 
-Per the standing RAM constraint (see `results/tables/phase3_baseline_summary.md`,
-README.md), **no model loading happens on this machine**. What *was* run for
-real, locally:
+This dev machine has ~7.7GB RAM and can't load any size of Qwen2.5-VL, so
+everything model-related runs on Kaggle. What's actually testable locally is
+the data-construction logic: `build_sft_examples()` against the real Phase
+2/3 manifests (719 examples for the original tier1+tier2 composition — 700
+genuine, 8 tier1, 11 tier2), and `python -m src.training.sft_train
+--environment local`, which builds the examples and exits cleanly before
+touching any weights. `tests/test_pipeline_smoke.py` covers the pure logic:
+tier1 field-override matching, example construction from fixture manifests,
+conversation formatting, checkpoint-directory discovery.
 
-- `build_sft_examples()` against the real Phase 2/3 manifests: **719 training
-  examples** (700 genuine + 8 Tier 1 + 11 Tier 2, `split="train"`) built and
-  inspected — real data, real JSON targets, zero mocking.
-- `python -m src.training.sft_train --environment local` end-to-end: builds the
-  719 examples, then exits cleanly *before* touching any model weights (see the
-  `environment == "local"` early-return in `train()`).
-- Unit tests (`tests/test_pipeline_smoke.py`) cover the pure logic: Tier 1
-  field-override matching (does a tamper's OCR text get correctly attributed to
-  the right schema field, or correctly left alone if it hits something outside
-  the 5 tracked fields like an MRZ line), example construction from fixture
-  manifests, conversation formatting, and checkpoint-directory discovery.
+One thing worth flagging: `_apply_tier1_field_overrides()` matches a
+tamper's OCR text back to a schema field by fuzzy string similarity
+(threshold 0.6). Verified on a real example — a genuine expiry
+`"04.11.2026."` tampered into `"14.16.0026."` matched correctly to the
+`expiry` field, and a separate MRZ-line tamper correctly matched nothing
+(not one of the 5 tracked fields). Short or heavily garbled OCR text could
+still fail to clear the threshold even when it did hit a real field, which
+would silently leave that field at its pre-tamper value in the training
+target.
 
-What was **not** run: `load_model_for_training()`, the actual QLoRA fine-tuning
-loop, and anything touching real Qwen2.5-VL weights. That happens on Kaggle.
+## Getting a training run to actually complete
 
-## Honest note on the Tier-1 field-override heuristic
+Real training runs on Kaggle. Getting one to finish took eleven kernel
+pushes across two distinct failure modes.
 
-`_apply_tier1_field_overrides()` matches a tamper's OCR text back to one of the
-5 schema fields by fuzzy string similarity (threshold 0.6). Verified on a real
-example: a genuine expiry `"04.11.2026."` tampered by `field_tamper.py` into
-`"14.16.0026 ."` was correctly matched and substituted into the `expiry`
-field, while a separate tamper on the MRZ line was correctly left unmatched
-(not one of the 5 fields). This is a known simplification, not a guarantee —
-short or heavily garbled OCR text could fail to clear the similarity threshold
-even when it did hit a real field, silently leaving that field at its
-pre-tamper value in the training target. Worth re-checking once real training
-numbers come back from Kaggle if extraction accuracy on Tier-1 examples looks
-worse than expected.
-
-## Scale note
-
-719 examples come from the same smoke-scale Tier 1 (10 images) / Tier 2 (15
-images) batches generated in Phase 2 — not the full ~1000-genuine-image
-manifest run through all forgery tiers. Real Kaggle training should regenerate
-Tier 1/2 at full scale first (`tamper_manifest`/`splice_manifest` without a
-`limit`) for a properly sized training set.
-
-## The real Kaggle training saga: 7B hang, decision to switch to 3B
-
-Once local logic was validated (above), real training moved to Kaggle. This
-section is the honest, complete record of what actually happened — including
-the part that didn't work, per this project's stated quality bar of
-documenting failures rather than burying them.
-
-**Kernels v8-v10 — genuine CUDA OOM, each fix confirmed working:**
+**v8-v10 — genuine OOM, each fix visibly working:**
 
 | Kernel | Config | Result |
 |---|---|---|
-| v8 | 1280px, LoRA r=16, `paged_adamw_8bit` | OOM in forward pass, 486MB short (image resize was uncapped — a real bug) |
-| v9 | 1280px (resize now capped), r=16, `paged_adamw_8bit` | OOM in backward pass, 1.7GB short, 1.10GB free |
-| v10 | same + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments` | Same OOM, 1.7GB short, but free memory rose to 1.36GB and fragmentation ("reserved but unallocated") dropped 524MB->291MB — the fix demonstrably worked, just wasn't sufficient alone |
+| v8 | 1280px, LoRA r=16, `paged_adamw_8bit` | OOM in forward pass, 486MB short — image resize was uncapped |
+| v9 | 1280px (resize capped), r=16 | OOM in backward pass, 1.7GB short |
+| v10 | + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments` | Same OOM, but free memory rose and fragmentation dropped 524MB→291MB — real progress, just not enough |
 
-Each fix visibly moved the numbers in the expected direction. This is what a
-real, working fix for a real memory problem looks like — contrast with what
-came next.
-
-**Kernels v11-v13 — training stopped OOM'ing and started silently hanging
-instead, and three different targeted fixes each moved the hang rather than
-resolving it:**
+**v11-v13 — stopped OOM'ing, started silently hanging instead, and each
+targeted fix moved the hang rather than fixing it:**
 
 | Kernel | Config | Result |
 |---|---|---|
-| v11 | 896px, LoRA r=12, `paged_adamw_8bit` | No OOM. Silently stalled at the backward-pass entry line for **39 minutes**, zero progress, no crash. Working hypothesis: paged optimizer paging to host memory under pressure, thrashing rather than erroring. |
-| v12 | 768px, LoRA r=8, **non-paged** `adamw_bnb_8bit` (removes the paging hypothesis) | Stalled at the **identical** line, confirmed via two live-log fetches minutes apart returning byte-identical content. Paging hypothesis falsified. |
-| v13 | same as v12 + `gradient_checkpointing_kwargs={"use_reentrant": False}` (targets a documented reentrant-checkpointing deadlock specific to QLoRA's frozen-base + trainable-adapter parameter mix) | Did NOT hang at the same line — progress: the "use_reentrant should be passed explicitly" warning present in every prior log disappeared, confirming the fix was active. But it then stalled for **~58 minutes** at an *earlier* point (before even reaching the backward-pass line), a different failure signature, not a resolution. |
+| v11 | 896px, r=12, `paged_adamw_8bit` | Stalled 39 minutes at the backward-pass entry, no crash |
+| v12 | 768px, r=8, non-paged `adamw_bnb_8bit` | Stalled at the identical line — rules out the paging hypothesis |
+| v13 | + `use_reentrant=False` | Stopped hanging at that line, but stalled ~58 minutes at an earlier point instead |
 
-**Why this is treated as strong evidence, not one unlucky bug:** three
-independent, individually well-reasoned fixes (optimizer paging, then
-checkpointing reentrancy) each targeting a different plausible root cause,
-each producing a *different* hang location rather than clearing the problem,
-is a materially different pattern than "one bug, wrong fix, try again." A
-shifting failure point across independently-motivated fixes points at
-something structural in the T4 / driver / library-version interaction at 7B
-scale in this specific environment — not a config value away from working.
+Three independently-motivated fixes, three different hang locations, never a
+resolution — that pattern points at something structural in the T4/driver/
+library-version combination at 7B scale, not a config value away from
+working. Decided to stop debugging 7B SFT and move the training target to
+3B instead (`config/model_config.yaml`). The 7B zero-shot baseline from
+Phase 3 stays as the reported baseline number — not re-run on 3B, which
+means later 3B fine-tuned numbers get compared against a 7B zero-shot
+baseline. That conflates a fine-tuning gain with a model-size difference and
+isn't a clean ablation; flagged everywhere the numbers appear side by side.
 
-**Decision:** stop debugging 7B SFT training. Switch the SFT (and future DPO)
-training target to Qwen2.5-VL-**3B**-Instruct (`config/model_config.yaml`).
-Phase 3's 7B zero-shot baseline succeeded and is kept as the reported
-baseline number as-is — it is not re-run on 3B.
-
-**Comparison caveat, stated explicitly:** the eventual 3B fine-tuned results
-will be compared against a 7B zero-shot baseline. That comparison conflates
-two effects (the fine-tuning gain, and a model-size difference) and is not a
-clean ablation. This must be flagged every place the numbers are shown
-side by side (README, results notebook, final writeup) — not presented as if
-it were a same-model before/after.
-
-**What was deliberately NOT changed alongside the model swap:** `max_image_size`
-(768px) and LoRA rank (r=8) stayed at their most-aggressive, 7B-hang-driven
-values rather than being relaxed back up for 3B's much larger memory
-headroom. This was a deliberate choice to change exactly one variable (the
-model) in the push that's meant to finally produce a completed run, not a
-belief that these are the right values for 3B long-term. Revisiting them
-upward — for better OCR legibility at higher resolution, or a higher LoRA
-rank now that there's VRAM to spare — is flagged here as a reasonable,
-clearly-labeled follow-up once a 3B baseline run has actually completed.
-
-## 3B training: the hang continues, then a new OOM chain (v14-v23)
-
-**v14-v18 — same silent-hang failure mode reappeared on 3B, across five more
-single-variable fixes:**
+**v14-v18 — same hang reappeared on 3B, five more single-variable fixes,
+none of them the answer:**
 
 | Kernel | Config | Result |
 |---|---|---|
-| v14 | 3B, checkpointing off (avoids the reentrant-checkpointing hypothesis entirely) | Hung at yet another point — ruled out checkpointing as sole cause |
-| v16 | 3B, `use_reentrant=False` + explicit `model.config.use_cache=False` set together (the exact combination later reconsidered for v23 — see below) | Hung again |
-| v17 | 3B, `device_map={"": 0}` | Crashed with a `RuntimeError` inside `torch.nn.DataParallel` — revealed this Kaggle instance has 2 visible GPUs, not 1 |
-| v18 | 3B, `CUDA_VISIBLE_DEVICES=0` set before any CUDA import (removes DataParallel auto-wrap entirely) | No more DataParallel crash, but still no completed run |
+| v14 | 3B, checkpointing off | Hung at a different point |
+| v16 | 3B, `use_reentrant=False` + `use_cache=False` | Hung again |
+| v17 | 3B, `device_map={"": 0}` | Crashed inside `torch.nn.DataParallel` — turned out this instance has 2 visible GPUs |
+| v18 | 3B, `CUDA_VISIBLE_DEVICES=0` set before any CUDA import | No more DataParallel crash, still no completed run |
 
-Six single-variable hypotheses (v11-v18, spanning both model sizes) were each
-tested and ruled out in turn. The actual root cause of the original hang was
-never found. Per explicit user direction, this investigation was stopped —
-"we've spent significant time on the training hang... no more open-ended
-debugging loops" — in favor of a pragmatic workaround: disable gradient
-checkpointing entirely and manage memory through other levers instead.
+Six single-variable hypotheses across both model sizes, root cause never
+found. Stopped that investigation and switched to a pragmatic workaround
+instead: disable gradient checkpointing entirely and manage memory through
+other levers.
 
-**v19-v22 — bounded image-size step-down search, checkpointing off. Every
-attempt OOM'd:**
+**v19-v22 — bounded image-size search, checkpointing off, every attempt
+OOM'd:**
 
-| Kernel | max_image_size | Result | Shortfall | Total GPU memory in use |
+| Kernel | max_image_size | Result | Shortfall | Total memory in use |
 |---|---|---|---|---|
 | v19 | 512px | OOM (MLP dequant) | ~44 MiB short | 14.55 GiB |
 | v20 | 384px | OOM (lm_head) | ~51 MiB short | 14.03 GiB |
 | v21 | 320px | OOM (lm_head) | ~163 MiB short | 14.14 GiB |
-| v22 | 256px (the floor — lower would make field-extraction meaningless) | OOM (loss/cross_entropy) | ~19 MiB short | 14.33 GiB |
+| v22 | 256px (floor) | OOM (cross_entropy) | ~19 MiB short | 14.33 GiB |
 
-Memory usage was **not monotonic** with image size (14.55 -> 14.03 -> 14.14
--> 14.33 GiB) — never explained, not investigated further per explicit user
-instruction ("we don't need to understand why, we just need this to work").
+Memory usage wasn't monotonic with image size (14.55 → 14.03 → 14.14 →
+14.33 GiB), never explained.
 
-**v23 — LoRA rank r=8->4 + `max_seq_length` 2048->1024, image size held at
-the 256px floor, checkpointing still off:**
-
-Before pushing v23, re-enabling checkpointing (the "untested gap" originally
-listed as option (a)) was reconsidered and correctly rejected: v16 (above)
-already ran the exact `use_reentrant=False` + explicit `use_cache=False`
-combination on 3B, and it hung. That combination is a known-bad configuration,
-not an untested one — an error in this document's earlier framing, caught
-before it led to wasted GPU time.
-
-Also found and fixed while implementing v23: `max_seq_length` in
-`training_config.yaml` had been a **decorative value only** since Phase 4's
-first kernel — `sft_train.py`'s `collate()` never actually passed it to the
-processor, so every kernel from v8 through v22 trained with the full
+**v23 — LoRA r=8→4 + max_seq_length 2048→1024, 256px floor.** Also found
+while implementing this: `max_seq_length` had been a decorative config
+value the whole time — `collate()` never actually passed it to the
+processor, so every kernel from v8 through v22 trained on the full
 untruncated sequence regardless of what the config said. Fixed by adding
-`truncation=True, max_length=max_seq_length` to the `processor(...)` call.
+`truncation=True, max_length=max_seq_length`. Result: OOM again, ~49 MiB
+short, total memory essentially unchanged from v22 despite halving both
+rank and sequence length.
 
-Result: **OOM again.** `trainable params: 9,288,192 || all params:
-3,763,911,168 || trainable%: 0.2468` confirms the rank cut took effect.
-Crashed on the very first training step's backward pass:
+Five bounded attempts across three memory levers, all landing within
+~50-160 MiB of the same ~14.3-14.5 GiB ceiling, no clear trend. Combined
+with the six hang hypotheses that never converged, this was the point to
+stop cutting config values and figure out what was actually happening.
 
-```
-torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 252.00 MiB.
-GPU 0 has a total capacity of 14.56 GiB of which 202.81 MiB is free.
-Including non-PyTorch memory, this process has 14.36 GiB memory in use.
-Of the allocated memory 14.03 GiB is allocated by PyTorch, and 193.47 MiB
-is reserved by PyTorch but unallocated.
-```
+## v24: the real cause, and the first completed run
 
-Shortfall ~49 MiB — slightly **worse** than v22's ~19 MiB, and total memory
-in use (14.36 GiB) essentially unchanged from v22 (14.33 GiB) despite halving
-LoRA rank and halving max sequence length. Both new levers, genuinely wired
-in this time, moved the needle by less than noise.
-
-**Where this leaves things:** five bounded, well-reasoned attempts (v19-v23)
-across three different memory levers (image size, LoRA rank, sequence length)
-have now landed within ~50-160 MiB of the same ~14.3-14.5 GiB ceiling on this
-T4, every single time, with no clear trend as any one lever is cut further.
-Combined with the six earlier hang hypotheses (v11-v18) that also never
-converged on a root cause, this is a strong enough pattern to treat as a
-genuine stop-and-report point rather than another autonomous cut — per this
-project's own standing rule not to loop indefinitely on a resistant failure.
-The remaining options are no longer cheap, low-risk config tweaks; they are
-real structural decisions (a materially smaller/different base model, a
-paid Kaggle tier or different compute provider, or accepting a reduced
-training scope) that need the user's judgment, not another bounded search.
-
-## v24: the real root cause, and the first completed training run
-
-Before committing to a structural decision, the user asked one more targeted
-question: was Phase 3's 7B model actually being freed before Phase 4 loaded
-the 3B model, given `kaggle_kernels/phase3_4_sft_baseline/kernel_driver.py`
-runs both in the same process? It was not — and worse than a simple
-oversight: `src/eval/clean_eval.py` caches its model/processor at **module
-scope** (`_model`/`_processor` globals, originally added so Phase 3's own
-per-image loop wouldn't reload weights). Since `kernel_driver.py` keeps that
-module imported for the rest of the process, the 7B model's reference never
-went away after Phase 3 finished. This fully explains v19-v23's mystery:
-three independently well-reasoned memory cuts to the 3B training (image
-size, LoRA rank, sequence length) barely moved the OOM ceiling because none
-of them touched the actual problem — the ceiling was leftover 7B weights,
+`kernel_driver.py` runs Phase 3 (7B zero-shot baseline) and Phase 4 (3B SFT)
+back to back in the same process — worth checking whether the 7B model was
+actually being freed in between. It wasn't, and not just as a simple
+oversight: `clean_eval.py` caches its model at module scope
+(`_model`/`_processor` globals, added so Phase 3's own per-image loop
+wouldn't reload weights), and since `kernel_driver.py` keeps that module
+imported for the rest of the process, the 7B model's reference never went
+away. That explains v19-v23's whole mystery — none of those memory cuts
+touched the actual problem, because the ceiling was leftover 7B weights,
 not 3B training's own footprint.
 
-**Fix (v24):** added `clean_eval.unload_model()` (clears the cached globals,
-`gc.collect()`, `torch.cuda.empty_cache()`), called from `kernel_driver.py`
-between phases, with real before/after GPU memory diagnostic prints so the
-result would be verified rather than assumed. v23's training settings (LoRA
-r=4, `max_seq_length=1024`, `max_image_size=256`, checkpointing off) were
-otherwise unchanged — a single targeted test of one new hypothesis.
-
-**The diagnostic confirmed it exactly:**
+Fix: added `clean_eval.unload_model()` (clears the cached globals,
+`gc.collect()`, `torch.cuda.empty_cache()`), called between phases, with
+before/after memory diagnostics so the fix would be verified rather than
+assumed:
 
 ```
 === GPU memory before Phase 3 cleanup: 5.91 GB allocated, 7.29 GB reserved ===
 === GPU memory after Phase 3 cleanup: 0.01 GB allocated, 0.03 GB reserved ===
 ```
 
-~7.3 GB of the ~14.5 GB budget was leftover 7B model on every one of
-v19-v23's attempts — a real, root-caused, confirmed explanation, not a
-guess.
-
-**Result: Phase 4 SFT training completed successfully — the first
-completed training run in this entire project.** 135/135 steps, all 3
-epochs, no crash:
+~7.3GB of the ~14.5GB budget was leftover 7B model on every one of v19-v23's
+attempts. Training completed — 135/135 steps, all 3 epochs, no crash:
 
 ```
 {'train_runtime': 7998.9749, 'train_samples_per_second': 0.27,
  'train_steps_per_second': 0.017, 'train_loss': 1.7295982360839843, 'epoch': 3.0}
 ```
 
-- Total training wall-clock: 7999 seconds (~2h 13m).
-- `train_loss` (Trainer's running average over the whole run, including the
-  high-loss early steps) = 1.7296.
-- Loss trajectory (from the log): 5.03 (epoch 0.22) → 3.12 (0.45) → 1.76
-  (0.67) → 1.41 (0.89) → 1.31 (1.11) → 1.29 (1.33) → 1.28 (1.56) → 1.27
-  (1.78) → 1.26 (2.00) → 1.25 (2.22) → 1.25 (2.45) → 1.25 (2.67) → 1.26
-  (2.89). Fast drop in epoch 1, then a plateau around 1.25-1.26 for the
-  remaining two epochs — an honest flag for the writeup: this could mean the
-  model reached its effective capacity given LoRA r=4 and 719 training
-  examples, not necessarily a red flag, but not clearly still improving
-  either. Worth checking against real eval numbers once
-  `leave_one_out_eval.py`/`clean_eval.py` are run against this checkpoint.
-- `trainable params: 9,288,192 || all params: 3,763,911,168 || trainable%:
-  0.2468` confirms the LoRA r=4 configuration was genuinely applied.
+2h13m wall-clock. Loss trajectory: 5.03 (epoch 0.22) → 3.12 (0.45) → 1.76
+(0.67) → 1.41 (0.89) → 1.31 (1.11) → 1.29 (1.33) → 1.28 (1.56) → 1.27 (1.78)
+→ 1.26 (2.00) → 1.25 (2.22) → 1.25 (2.45) → 1.25 (2.67) → 1.26 (2.89). Fast
+drop in epoch 1, then a plateau around 1.25-1.26 — could mean the model hit
+its effective capacity given LoRA r=4 and 719 training examples, not
+necessarily a problem but not obviously still improving either.
+`trainable params: 9,288,192 || all params: 3,763,911,168 || trainable%:
+0.2468` confirms r=4 was actually applied. Checkpoint committed at
+`checkpoints/sft_v24_final/` (36MB, well under GitHub's limit).
 
-**Checkpoint:** saved to
-`C:\Users\Acer\OneDrive\Desktop\hyperVerge\kaggle_run_output_v24\checkpoints\sft\`
-— `checkpoint-45/`, `checkpoint-90/`, `checkpoint-135/` (~55MB each, include
-optimizer/scheduler state) and `final/` (36MB, adapter weights only — the
-one for downstream use). Not committed into git per the repo's existing
-`.gitignore` convention (checkpoints tracked outside git deliberately,
-predating this session) — flagged to the user as a real option to revisit
-since 36MB is well under GitHub's 100MB file limit.
+The eleven pushes it took to get here split into two failure modes: six hang
+hypotheses that never converged (v11-v18), then five OOM attempts that kept
+shrinking the wrong variable (v19-v23). The actual fix wasn't a bigger
+model, more VRAM, or a cleverer LoRA config — it was a cached global
+reference outliving its scope, something no amount of config-level cutting
+could have found.
 
-**The honest throughline for the writeup:** eleven kernel pushes (v14-v24)
-across two different failure modes — six single-variable hang hypotheses
-that never converged on a root cause (v11-v18, unresolved, documented as
-such), followed by five OOM attempts that all shrank the wrong variable
-(v19-v23) — were only resolved once the user asked a question about process
-lifecycle and cross-phase state that no amount of config-level cutting could
-have found. That is worth stating plainly in the final paper: the fix was
-not a bigger model, more VRAM, or a cleverer LoRA config — it was a basic
-resource-management bug (a cached global reference outliving its scope)
-that had nothing to do with any of the levers being tuned.
+## v25: does more LoRA capacity help?
 
-## v25: capacity restoration — a real success, and a real unresolved anomaly
+With the real cause of v19-v23's ceiling understood, it was worth restoring
+rank/image size/sequence length toward less aggressive values — v23's OOM
+showed 14.36GiB in use at crash, and subtracting the confirmed ~7.29GiB leak
+puts 3B training's actual footprint at only ~7.07GiB against a ~14.56GiB
+budget. Roughly 2x headroom was available the whole time the v19-v23 search
+ran.
 
-With the true root cause of v19-v23's ceiling understood (leftover 7B model,
-not insufficient 3B capacity), LoRA rank/image size/sequence length were
-restored toward pre-panic values, motivated by real math: v23's OOM showed
-14.36GiB in use at crash; subtracting the confirmed ~7.29GiB leak leaves 3B
-training's actual footprint at only ~7.07GiB against a ~14.56GiB budget —
-roughly 2x headroom was available the whole time v19-v23's search ran.
+Three attempts at r=16 all OOM'd with byte-identical numbers (768px/seq2048,
+384px/seq1536, and an isolated-rank retry at 256px/seq1536 — all three:
+44.00 MiB requested, 8.81 MiB free, 14.55GiB total in use, verified via a
+diagnostic kernel to rule out a stale-config artifact). That looked like a
+clean isolation of LoRA rank as the cause.
 
-**Three attempts at r=16, each OOM'ing with byte-identical numbers**, are
-documented in `writeup/project_report.md`'s Failure Analysis (768px/seq=2048,
-384px/seq=1536, and an isolated-rank retry at 256px/seq=1536 — all three:
-44.00 MiB requested, 8.81 MiB free, 14.55 GiB total in use, verified via a
-diagnostic kernel to rule out a stale-config artifact). This was written up
-as "conclusively attributing the cause to LoRA rank r=16 itself."
-
-**A fourth push (intended to be the safe, final r=8/512px/seq=2048 config)
-was, due to a real process error, actually a fourth r=16 attempt — and this
-one succeeded.** The mistake: `kaggle datasets status` was checked and
-reported "ready" before the r=8 dataset push had actually finished
-propagating to a freshly-started kernel's mount (a real, previously-observed
-Kaggle infrastructure quirk — see PROJECT_STATUS.md). The kernel
-(`poojadheniya/doc-verification-zero-shot-baseline-sft-qlora`, kernel version
-9) started training against the **stale, pre-push r=16 config** — confirmed
-beyond doubt by two independent pieces of ground truth, not inference:
-
-- Trainable-param count at training start: `37,152,768` (matches r=16
-  exactly; r=8 would show ~18.5M).
-- The saved checkpoint's real `adapter_config.json`: `"r": 16, "lora_alpha":
-  32` — read directly from the downloaded Kaggle output, not assumed.
-
-**This run completed all 135/135 steps, all 3 epochs, no crash:**
+A fourth push, meant to be the safer r=8/512px/seq2048 config, actually ran
+as a fourth r=16 attempt by accident — a Kaggle dataset version reported
+"ready" before it had actually finished propagating to a freshly-started
+kernel's mount. This one completed. Confirmed two ways, not assumed:
+trainable-param count at training start was 37,152,768 (matches r=16
+exactly), and the saved checkpoint's real `adapter_config.json` shows `"r":
+16, "lora_alpha": 32`.
 
 ```
 {'train_runtime': 8397.8802, 'train_samples_per_second': 0.257,
  'train_steps_per_second': 0.016, 'train_loss': 1.5124582361291956, 'epoch': 3.0}
-=== Phase 4 peak GPU memory (this training run only, Phase 3's usage excluded):
-10.17 GB allocated, 10.51 GB reserved ===
+=== Phase 4 peak GPU memory: 10.17 GB allocated, 10.51 GB reserved ===
 ```
 
-- Total wall-clock: 8398 seconds (~2h20m) — comparable to v24's 2h13m.
-- Loss trajectory: 4.39 (0.22) → 1.77 (0.45) → 1.31 (0.67) → 1.28 (0.89) →
-  1.25 (1.11) → 1.24 (1.33) → 1.24 (1.56) → 1.23 (1.78) → 1.22 (2.00) → 1.22
-  (2.22) → 1.22 (2.45) → 1.22 (2.67) → plateaus at **~1.217-1.220** for the
-  last two epochs — genuinely **lower** than v24's r=4 plateau (~1.25-1.26).
-  Real evidence the restored capacity (r=16 vs r=4) let the model fit the
-  training data measurably better, independent of the generalization
-  question tested next via adversarial-rounds.
-- Peak GPU memory (10.17GB allocated / 10.51GB reserved) is a real,
-  **directly-measured** number from this run's own diagnostic print — **not
-  an inference**. It sits comfortably ~4GB below the ~14.5GiB ceiling that
-  killed 3 prior r=16 attempts at the exact same rank.
+2h20m wall-clock, comparable to v24. Loss trajectory: 4.39 (0.22) → 1.77
+(0.45) → 1.31 (0.67) → 1.28 (0.89) → 1.25 (1.11) → 1.24 (1.33) → 1.24 (1.56)
+→ 1.23 (1.78) → 1.22 (2.00) → 1.22 (2.22) → 1.22 (2.45) → 1.22 (2.67),
+plateauing around 1.217-1.220 for the last two epochs — measurably lower
+than v24's r=4 plateau. Peak memory of 10.51GB reserved sits comfortably
+~4GB below the ceiling that killed the three earlier r=16 attempts at the
+identical rank.
 
-**The honest, unresolved contradiction, stated plainly:** the same LoRA rank
-(r=16), on the same base model, same library versions, same Kaggle T4 tier,
-failed identically three times and then succeeded with a ~4GB safety margin
-on the fourth attempt. This project's own Failure Analysis previously stated
-r=16 was "conclusively" isolated as the cause of catastrophic memory growth —
-that conclusion must be walked back to **not proven**, given this direct
-counterexample. At the same time, three prior byte-identical failures are
-also real data — this is not proof r=16 is now safe or reliable either. Both
-facts are true simultaneously and both are reported here, rather than
-resolving the tension by picking whichever conclusion is more convenient.
+That's a real contradiction worth sitting with rather than resolving in
+whichever direction is more convenient: the same rank, same base model,
+same library versions, same T4 tier failed identically three times and then
+succeeded with a 4GB margin on the fourth try. The earlier conclusion that
+r=16 was "conclusively" the cause of the memory blowup doesn't hold up
+against this — it should read as not proven either way, since three
+identical failures are also real data. `kernel_driver.py`'s logging doesn't
+print image size or sequence length directly, so unlike LoRA rank (verified
+via `adapter_config.json`), there's no way to confirm exactly what this
+particular run used. The three failed r=16 attempts already showed that
+varying image size and sequence length made no measurable difference to
+where they crashed, which argues against those variables being the
+reconciling factor here either. Best guess: real session-to-session
+variance in the underlying Kaggle GPU instance or driver overhead — this
+kernel had been deleted and re-pushed fresh partway through the
+investigation, so it wasn't running in the same session state as the three
+failures. Not verifiable after the fact, and left as an open question
+rather than a resolved one.
 
-**What could not be determined, labeled honestly as a real information
-gap:** `kernel_driver.py`'s Phase 4 logging does not print `max_image_size`
-or `max_seq_length` directly, so — unlike LoRA rank, which is verified via
-`adapter_config.json` — this run's actual image size / sequence length
-cannot be confirmed from any saved artifact. The three failed r=16 attempts
-already demonstrated that varying image size (768→384→256px) and sequence
-length (2048→1536) made **no measurable difference** to their identical OOM
-point, which argues against those two variables being the reconciling factor
-here either. The best-supported honest explanations, in order of plausibility,
-given the evidence available:
+Checkpoint: `checkpoints/sft_v25_final/`. Unlike v24, this adapter's
+`adapter_model.safetensors` is 141.8MB — over GitHub's 100MB push limit
+(r=16 roughly quadruples trainable params vs r=4: 37.15M vs 9.29M). Only the
+metadata (`adapter_config.json`, `README.md`) is committed; the real
+weights live in the Kaggle kernel output and on local disk.
 
-1. **Real Kaggle infrastructure/session variance** — a different underlying
-   GPU instance, driver memory overhead, or session freshness (this kernel
-   was deleted and re-pushed fresh partway through this investigation per
-   PROJECT_STATUS.md's documented recovery procedure for
-   "Maximum batch GPU session count reached" errors) — plausible given the
-   3 failures were closely spaced in time/session state and this success came
-   after an intervening delete+repush, but not verifiable after the fact.
-2. **An unidentified config or environment difference** introduced by the
-   dataset mid-propagation state itself — possible but unproven, since the
-   demonstrated insensitivity of the 3 failures to image_size/seq_length
-   argues against those specific values being the answer.
+This run used the exact same 719-example, tier1+tier2-only composition as
+v24, so it tests capacity in isolation while holding the same ~35:1 class
+imbalance constant. Running adversarial-rounds against it gives the answer:
+identical single-class collapse to v24, confirmed prediction-by-prediction
+(see `phase6_adversarial_rounds_summary.md`). More capacity alone doesn't
+fix it.
 
-Neither explanation is confirmed. This is reported as a genuine open
-question, per this project's standing rule against papering over
-inconvenient or confusing real results.
+## v26: fixing the class imbalance
 
-**Checkpoint:** `checkpoints/sft_v25_final/` (adapter, r=16). Unlike v24's
-36MB checkpoint, this adapter's `adapter_model.safetensors` is **141.8MB —
-over GitHub's 100MB hard per-file push limit** (r=16 roughly quadruples
-trainable params vs v24's r=4: 37.15M vs 9.29M). No Git LFS is set up in
-this repo, and standing one up for a single file wasn't judged worth the
-added complexity — so only the small metadata (`adapter_config.json`,
-`README.md`) is committed to git; the real weights live in the Kaggle
-kernel output (kernel version 9) and this dev machine's local disk. A
-documented scoping decision, not an oversight.
+Next experiment: oversample tampered examples to a real 1:1 ratio
+(`sft_train.balance_examples()`), across all 5 forgery tiers instead of
+just 2, at the safer r=8/512px config rather than v25's still-unresolved
+r=16, to keep the balance variable from getting tangled up with that
+memory anomaly.
 
-**Real, important scope note on this run's training data:** this run used
-the exact same 719-example, tier1+tier2-only composition as v24 (700
-genuine + 8 tier1 + 11 tier2 — confirmed via the log's "Built 719 SFT
-training examples" line, identical to v24's). It did **not** test the
-class-imbalance hypothesis — it tests capacity in isolation, holding the
-same severe (~35:1) class imbalance constant. The next real test
-(adversarial-rounds against this checkpoint) answers: does more capacity
-alone fix the single-class collapse, or does the same imbalance still win?
-
-**Result of that test (real, verified): capacity alone does not fix the
-collapse.** See `results/tables/phase6_adversarial_rounds_summary.md`'s "v25
-capacity-only re-test" section — identical single-class collapse to v24,
-verified via real per-example verdict distributions, not just aggregate
-accuracy.
-
-## v26: class-balanced retrain — a real OOM, and a real honest correction
-
-The next experiment (per the user's explicit direction, since capacity alone
-was just shown not to work): class-balanced training, oversampling tampered
-examples to a real 1:1 ratio (`sft_train.balance_examples()`), using all 5
-forgery tiers and the safer, historically-validated r=8/512px config —
-deliberately NOT v25's r=16, to avoid conflating the balance variable with
-that still-unresolved memory anomaly.
-
-**Attempt 1 (r=8, 512px, seq=2048, all 5 tiers, balanced to 1:1) OOM'd
-immediately on the first training step**, real and clean:
+First attempt (r=8, 512px, seq=2048, all 5 tiers, balanced to 1:1) OOM'd
+immediately on the first training step:
 
 ```
 2026-07-24 12:57:00,572 [INFO] sft_train: Built 762 SFT training examples
@@ -409,36 +243,23 @@ GPU 0 has a total capacity of 14.56 GiB of which 106.81 MiB is free.
 Including non-PyTorch memory, this process has 14.46 GiB memory in use.
 ```
 
-The balancing logic itself worked exactly as intended (762 -> 1400 examples,
-matching the real local test run) — this is a real memory ceiling issue,
-independent of the class-balancing feature.
+Balancing worked correctly (762 → 1400 examples, matching the local test) —
+this was a real memory issue, unrelated to the balancing feature itself. It
+turned out the r=8/512px/seq=2048 combination had actually never been run
+for real before this — v25 was supposed to test it but ran the stale r=16
+config instead, as described above. The ~7.26GiB "safe" estimate that
+config was based on came from v19's data, which predates
+`max_seq_length` being enforced at all — v19 trained on genuinely uncapped
+sequences and still fit, so it was never a like-for-like comparison to a
+run that actually truncates to 2048 tokens.
 
-**The honest, important correction this surfaced:** the r=8/512px/seq=2048
-combination that `model_config.yaml`'s "FINAL DECISION" comment describes as
-"a genuinely evidenced choice, not a new guess" had actually **never been
-tested with a real training run before this**. v25 was *intended* to test it
-but, due to the dataset-propagation-lag process error documented above,
-actually ran with a stale r=16 config instead. The "~7.26GiB safe" estimate
-that decision leaned on came from v19's real data — which predates
-`max_seq_length` even being wired into `collate()` (fixed in v23). v19
-trained on genuinely **uncapped** sequences and still fit; a run that
-actually truncates to 2048 tokens was never a like-for-like comparison. The
-inference was reasonable given what was known at the time; real data has now
-shown it wrong, and this document said as much would be corrected honestly
-if that happened.
+Dropped `max_image_size` 512 → 384, based on the real, internally
+consistent delta between v19 (512px) and v20 (384px)'s original numbers
+(14.55GiB vs 14.03GiB, ~520MiB difference — trustworthy as a delta even
+though both absolute numbers included the since-fixed 7.29GiB leak
+equally). That should close the 374MiB gap with real margin to spare.
 
-**Single, evidence-based fix applied** (per the standing "one well-reasoned
-attempt, don't loop on variations" instruction from the earlier v25
-investigation): `max_image_size` 512 -> 384, based on the real,
-internally-consistent **delta** between v19 (512px) and v20 (384px)'s
-original in-use numbers (14.55GiB vs 14.03GiB — a real ~520MiB difference,
-trustworthy as a delta even though each absolute number included the
-since-fixed ~7.29GiB leak equally). Applying that ~520MiB saving to v26's
-real 14.46GiB shortfall leaves ~600MB of margin under the 14.56GiB budget —
-reasoned from real data, not a blind guess.
-
-**Attempt 2 (r=8, 384px, seq=2048) completed successfully — 264/264 steps,
-all 3 epochs, no crash:**
+Second attempt completed — 264/264 steps, all 3 epochs, no crash:
 
 ```
 {'train_runtime': 19553.0763, 'train_samples_per_second': 0.215,
@@ -446,37 +267,21 @@ all 3 epochs, no crash:**
 === Phase 4 (v26) peak GPU memory: 12.36 GB allocated, 12.94 GB reserved ===
 ```
 
-- Total training wall-clock: **19553s ≈ 5h 26m** (real, considerably longer
-  than v24/v25's ~2.3h, as expected — the balanced set has ~1.9x more
-  examples: 1400 vs 719/762).
-- Peak GPU memory: **12.94GB reserved**, real headroom of ~1.6GB under the
-  14.56GiB budget — the 384px fix worked with real margin, confirming the
-  reasoning above rather than just getting lucky.
-- `trainable params: 18,576,384 || all params: 3,773,199,360` — confirms
-  r=8, exactly half of v25's r=16 (37.15M), as expected.
-- `train_loss` (Trainer's running average over the whole run, including the
-  high early-step losses) = **2.6759** — the loss trajectory itself: 7.16
-  (0.11) -> 4.07 (0.23) -> 2.68 (0.34) -> 2.50 (0.46), then a **plateau
-  around 2.38-2.45** from epoch ~0.6 onward, ending at 2.42 (2.96).
-- **Real adapter_config.json (ground truth):** `r: 8, lora_alpha: 16,
-  target_modules: [k_proj, o_proj, up_proj, v_proj, q_proj, down_proj,
-  gate_proj]` — confirms the intended config was actually used this time.
-- **Real checkpoint file size: 74,405,904 bytes (~71MB)** — under GitHub's
-  100MB limit, so the full adapter (not just metadata) is committed to git,
-  same as v24.
+5h26m wall-clock — considerably longer than v24/v25's ~2.3h, expected given
+the balanced set has ~1.9x more examples (1400 vs 719/762). Peak memory
+12.94GB reserved, ~1.6GB of real headroom under budget. `trainable params:
+18,576,384 || all params: 3,773,199,360` confirms r=8, exactly half of
+v25's r=16. Loss trajectory: 7.16 (0.11) → 4.07 (0.23) → 2.68 (0.34) → 2.50
+(0.46), plateauing around 2.38-2.45 from roughly epoch 0.6 onward, ending at
+2.42. `adapter_config.json` confirms `r: 8, lora_alpha: 16`. Checkpoint file
+size: 74,405,904 bytes (~71MB), under the 100MB limit, committed in full.
 
-**Honest comparison of this plateau to v24/v25's, and what it does and
-doesn't mean:** this run's loss plateau (~2.38-2.45) is notably *higher*
-than both v24's (r=4, imbalanced, ~1.25-1.26) and v25's (r=16, imbalanced,
-~1.217-1.22). This is not necessarily a worse result — it's expected and
-even a good sign: v24 and v25 both trained on severely imbalanced data
-(~700 genuine vs ~19 tampered) where "always predict genuine" is a very
-easy, very-low-loss shortcut the model can settle into. This run's data is
-genuinely balanced (700 genuine vs 700 real+oversampled tampered), so that
-shortcut no longer exists — a higher loss here could reflect the model
-actually being forced to attempt real discrimination, which is a harder
-task, not a worse-trained model. **This is a hypothesis, not a claim** — the
-loss number alone cannot distinguish "learning to discriminate" from "just
-struggling more broadly." The real, decisive test is whether the resulting
-model's predictions are actually varied (not single-class) on held-out
-examples — tested next via adversarial-rounds, exactly as planned.
+That plateau (~2.38-2.45) is notably higher than both v24's (~1.25-1.26)
+and v25's (~1.217-1.22). Worth being careful about what that does and
+doesn't mean — v24 and v25 both trained on data where "always predict
+genuine" is a low-loss shortcut, and this run's data doesn't have that
+shortcut anymore, so a higher loss here plausibly reflects the model
+actually attempting real discrimination rather than being worse-trained.
+That's a hypothesis, not something the loss number alone can prove — the
+real test is whether the resulting predictions are actually varied on held
+out examples, covered in `phase6_adversarial_rounds_summary.md`.

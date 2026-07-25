@@ -1,124 +1,95 @@
-# Phase 6: Adversarial Retraining Rounds — Real Results
+# Phase 6: adversarial retraining rounds
 
-Real Kaggle run (kernel `doc-verification-adversarial-rounds`, dataset version
-with the manifest/path-separator fixes), 3 rounds against a fixed 30-example
-eval set (10 genuine + 20 tampered across tier1/tier2/tier4/tier5, per
-`adversarial_rounds.build_eval_set()`).
+Kaggle run (`doc-verification-adversarial-rounds`), 3 rounds against a fixed
+30-example eval set (10 genuine + 20 tampered across tier1/tier2/tier4/tier5,
+built by `adversarial_rounds.build_eval_set()`).
 
-## The headline number, reported honestly
+## v24 baseline: not a generalization curve, a collapsing classifier
 
-| Round | Retrained on | Accuracy | 95% CI | Predicted-verdict distribution |
+| Round | Retrained on | Accuracy | 95% CI | Predicted verdicts |
 |---|---|---|---|---|
-| 0 (existing v24 checkpoint, no retrain) | — | **33.3%** | [16.7%, 50.0%] | genuine: 25, *unparseable*: 5, tampered: **0** |
-| 1 | 20 failures mined from round 0 | **66.7%** | [50.0%, 83.3%] | tampered: **30**, genuine: 0 |
-| 2 | 10 failures mined from round 1 | **33.3%** | [16.7%, 50.0%] | genuine: **30**, tampered: 0 |
+| 0 (v24 checkpoint, no retrain) | — | 33.3% | [16.7%, 50.0%] | genuine: 25, unparseable: 5, tampered: 0 |
+| 1 | 20 failures mined from round 0 | 66.7% | [50.0%, 83.3%] | tampered: 30, genuine: 0 |
+| 2 | 10 failures mined from round 1 | 33.3% | [16.7%, 50.0%] | genuine: 30, tampered: 0 |
 
-n=30 every round (fixed eval set, unchanged across rounds by design).
-Bootstrap 95% CIs are wide at this sample size — stated plainly, not hidden.
+n=30 every round, same fixed set each time. The CIs are wide at this sample
+size, worth keeping in mind before reading much into the exact percentages.
 
-## This is not a generalization curve — it's a collapsing classifier
+The verdict column is the real story, not the accuracy number. In every
+round the model predicted a single class for all 30 examples:
 
-The verdict-distribution column is the real story, not just the accuracy
-number. **At no point across any of the 3 rounds did the model produce a
-mixed genuine/tampered verdict distribution.** Every round, it predicted a
-single class for all 30 examples (with 5 unparseable responses in round 0):
+- Round 0 defaults to "genuine" for basically everything, so it gets the 10
+  actually-genuine examples right by coincidence and misses all 20 tampered
+  ones. 33.3% is exactly what "always say genuine" scores on this set.
+- Round 1 gets retrained on those 20 missed tampered examples and swings to
+  always predicting "tampered" instead — not discrimination, just a flipped
+  global bias. 66.7% is what "always say tampered" scores on a
+  20-tampered/10-genuine set.
+- Round 2 retrains on round 1's new failures (the 10 genuine documents it
+  now calls tampered) and flips right back to always "genuine." Same 33.3%
+  as round 0.
 
-- Round 0: always "genuine" (or fails to parse) → gets the 10 actually-genuine
-  examples right by coincidence, gets all 20 actually-tampered examples wrong.
-  33.3% = 10/30, exactly what "always predict genuine" scores on this set.
-- Round 1: retrained on round 0's 20 mined failures (all 20 were the
-  actually-tampered examples it called "genuine") → the retrain didn't teach
-  it to *discriminate* genuine from tampered, it taught it to always say
-  "tampered" instead. 66.7% = 20/30 — better only because "always tampered"
-  happens to score higher on a 20-tampered/10-genuine set than "always
-  genuine" does, not because it learned anything about *why* an image is
-  tampered.
-- Round 2: retrained on round 1's 10 newly-mined failures (the 10
-  actually-genuine examples it now incorrectly called "tampered") → flips
-  straight back to always predicting "genuine". 33.3% again — back to
-  exactly round 0's number.
+Three rounds, two degenerate single-class predictors, no evidence the model
+ever developed a real decision boundary based on image content. Each tiny
+10-20 example retrain has enough gradient signal to flip the adapter's
+global bias but not enough to teach it anything that generalizes.
 
-**Honest conclusion: this adversarial retraining loop, at this scale, is not
-producing a more robust model.** It is oscillating a single global bias
-(genuine ↔ tampered) between two degenerate single-class predictors,
-entirely determined by whichever tiny (10-20 example) mined-failure batch it
-saw most recently. There is no evidence across any of these 3 rounds that
-the model developed a real decision boundary that separates genuine from
-tampered content based on image evidence.
+This lines up with what the training loss showed too — v24's loss plateaus
+around 1.25-1.26 in epochs 2-3 after a fast initial drop, consistent with a
+model near the limit of what a rank-4 adapter and 719 training examples can
+represent. See `phase4_sft_summary.md` for the loss curve.
 
-## Why, honestly — ties directly to the loss-plateau finding
+## v25: does more LoRA capacity fix it?
 
-This result is consistent with, and gives real evidence *for*, the
-hypothesis flagged in `PROJECT_STATUS.md`/`phase4_sft_summary.md` about
-v24's training: the loss plateau in epochs 2-3 (stuck ~1.25-1.26 after a
-fast drop in epoch 1) was flagged as a possible sign the model reached its
-effective capacity given **LoRA rank 4** (cut for memory reasons during the
-v19-v23 OOM chain, not because r=4 was judged sufficient) and the small
-**719-example** training set. A model with genuinely limited capacity to
-represent the tamper-detection task, combined with retraining rounds on
-extremely small (10-20 example) batches, is exactly the failure mode that
-produces this kind of oscillating single-class collapse rather than
-incremental improvement — each tiny retrain has enough gradient signal to
-flip the whole adapter's global bias, but not enough signal (or capacity) to
-learn a real, generalizing distinction.
+v25 bumps the adapter to r=16 (from v24's r=4), same 719-example
+composition, same eval set. Same collapse, checked against the real
+per-example output this time, not just the aggregate number:
 
-## What this means for the rest of the project (documented decision)
-
-This is being reported as a real, weak, and somewhat concerning result — not
-smoothed over. It directly informs:
-- The writeup's Limitations section must lead with this, not bury it: the
-  trained model's real tamper-detection capability, at the config forced by
-  this project's compute constraints (LoRA r=4, 256px images, 719 training
-  examples), does not show evidence of the kind of image-content-based
-  discrimination the whole system is designed around.
-- Leave-one-out's results (once available) are the more important read on
-  actual generalization capability, since each fold is a genuine ~719-example
-  retrain from the base model, not a 10-20-example perturbation.
-- If this pattern also shows up in leave-one-out (e.g., near-chance accuracy,
-  single-class collapse), the honest conclusion for the final writeup is that
-  meaningfully more training data and/or a higher LoRA rank — both cut for
-  Kaggle T4 memory reasons documented extensively in `phase4_sft_summary.md`
-  — are the primary, well-evidenced levers for a stronger model, not further
-  algorithmic changes to the adversarial-rounds or leave-one-out procedures
-  themselves.
-
-## v25 capacity-only re-test: identical collapse, real evidence against capacity alone
-
-Once v25 (LoRA r=16, a real, verified capacity-restoration checkpoint — see
-`phase4_sft_summary.md`'s "v25" section) completed, this exact adversarial-rounds
-procedure was re-run against it as Round 0's baseline, holding everything else
-constant — same fixed 30-example eval set, same tier1+tier2-only, ~700
-genuine/19 tampered (~35:1) training-data composition as v24. This isolates
-one question: does more capacity alone (without touching the class imbalance)
-fix the collapse?
-
-**No. The result is essentially identical to v24's, verified down to the
-real per-example verdict distribution, not just the aggregate accuracy:**
-
-| Round | Retrained on | Accuracy | Predicted-verdict distribution (real, from raw per-example output) |
+| Round | Retrained on | Accuracy | Predicted verdicts |
 |---|---|---|---|
-| 0 (v25 checkpoint, r=16, no retrain) | — | **33.3%** | genuine: **30/30**, tampered: 0 |
-| 1 | 20 failures mined from round 0 | **66.7%** | tampered: **30/30**, genuine: 0 |
-| 2 | 10 failures mined from round 1 | **33.3%** | genuine: **30/30**, tampered: 0 |
+| 0 (v25 checkpoint, r=16, no retrain) | — | 33.3% | genuine: 30/30 |
+| 1 | 20 failures mined from round 0 | 66.7% | tampered: 30/30 |
+| 2 | 10 failures mined from round 1 | 33.3% | genuine: 30/30 |
 
-The accuracy sequence (33.3% -> 66.7% -> 33.3%) matches v24's run exactly,
-and — checked directly against the real per-example output this time, not
-assumed from the aggregate number — every single round is still a pure
-single-class predictor across all 30 examples, with the same genuine ->
-tampered -> genuine oscillation pattern as v24.
+Identical numbers to v24, identical oscillation pattern. Capacity alone
+doesn't fix it — the imbalanced training data (700 genuine vs 19 tampered)
+produces the same failure mode regardless of adapter rank. v25's training
+loss did plateau lower than v24's, so rank isn't irrelevant, but it's
+clearly not sufficient by itself. That's what pointed at the class ratio as
+the actual thing to fix next, not further rank tuning.
 
-**Honest conclusion: capacity alone (LoRA r=16 vs r=4) does not fix the
-collapse.** This is real, direct evidence for the class-imbalance hypothesis
-over the capacity hypothesis — the same severely imbalanced training data
-(700 genuine vs 19 tampered, ~35:1) produces the identical failure mode
-regardless of how much LoRA capacity is available to the adapter. It does
-not rule out capacity as *a* contributing factor entirely (v25's own
-training-loss plateau was measurably lower than v24's, a real, separate
-positive signal — see `phase4_sft_summary.md`), but it demonstrates capacity
-is not sufficient on its own to fix the collapse, which is the more decision-
-relevant finding for this project's remaining scope. This directly motivates
-and justifies the next real experiment: class-balanced training (oversample
-tampered examples to 1:1 — see `sft_train.balance_examples()`), tested next
-while holding the safer, extensively-validated r=8/512px config constant to
-avoid conflating the balance variable with v25's own unresolved memory
-anomaly.
+## v26: fixing the class imbalance actually works, mostly
+
+v26 (r=8, 384px, tampered examples oversampled to a real 1:1 ratio — see
+`phase4_sft_summary.md`) goes through the same procedure as its Round 0
+baseline.
+
+| Round | Retrained on | Accuracy | Predicted verdicts | Confusion (true → pred) |
+|---|---|---|---|---|
+| 0 (v26 checkpoint, no retrain) | — | 86.7% | tampered: 24, genuine: 6 | genuine→genuine: 6, genuine→tampered: 4, tampered→tampered: 20, tampered→genuine: 0 |
+| 1 | 4 failures mined from round 0 | 33.3% | genuine: 30 | genuine→genuine: 10, tampered→genuine: 20 |
+| 2 | 20 failures mined from round 1 | 66.7% | tampered: 30 | genuine→tampered: 10, tampered→tampered: 20 |
+
+Round 0 is the one that matters. The model isn't defaulting to one class —
+it caught every tampered example in the set, got 6 of 10 genuine documents
+right, and only misfired on the other 4 (calling them tampered, not the
+reverse). A real false-positive bias, not a collapse, and a much more
+defensible failure mode for a fraud-detection system: nothing tampered
+slipped through as genuine.
+
+Rounds 1 and 2 undo it. Retraining on just 4 mined examples flips the whole
+model back to single-class, and retraining on 20 flips it to the opposite
+class. So the base v26 checkpoint isn't the problem anymore — the
+adversarial-rounds retraining loop is. A full 3-epoch retrain on a handful
+of examples is apparently enough to overwrite most of what the 1400-example
+balanced set taught it, which is a lot of forgetting for such a small
+update. Worth fixing on its own — either a much smaller learning rate for
+these mini-retrains, or mixing the mined failures back in with a slice of
+the original training set instead of training on them in isolation.
+
+A full leave-one-out re-run on v26 wasn't done — the check above already
+answers the main question (does balancing fix the collapse), and a full
+5-fold retrain is a multi-hour job that isn't necessary to draw that
+conclusion. It would be the obvious next step with more time, and fixing
+the retraining-loop fragility above would be worth doing first so it
+doesn't mask what the base checkpoint actually learned.

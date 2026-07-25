@@ -47,85 +47,164 @@ TIER_LABELS = {
 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,440;9..144,560;9..144,650&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+:root {
+    --paper: #EEF2F0;
+    --surface: #FFFFFF;
+    --surface-alt: #F6F9F7;
+    --ink: #16211E;
+    --ink-soft: #4B5A56;
+    --ink-faint: #7C8B86;
+    --border: #D7DEDA;
+    --accent: #1F5C56;
+    --accent-soft: #E4EEEC;
+    --genuine: #3E6B4F;
+    --genuine-soft: #E4EEE7;
+    --tampered: #8C3B32;
+    --tampered-soft: #F3E4E1;
+    --review: #93701F;
+    --review-soft: #F1EBDB;
 }
-.stApp { background: #f5f6fa; }
-section[data-testid="stSidebar"] { background: #14152b; }
-section[data-testid="stSidebar"] * { color: #e7e8f5 !important; }
-section[data-testid="stSidebar"] .stSelectbox label { color: #9a9cc4 !important; font-weight: 500; }
+@media (prefers-color-scheme: dark) {
+    :root {
+        --paper: #101614;
+        --surface: #182320;
+        --surface-alt: #1E2926;
+        --ink: #E7EEEC;
+        --ink-soft: #9FB0AB;
+        --ink-faint: #6C7C77;
+        --border: #2C3A36;
+        --accent: #59B3A6;
+        --accent-soft: #1C332F;
+        --genuine: #7FB592;
+        --genuine-soft: #1E2F24;
+        --tampered: #D08E82;
+        --tampered-soft: #33201D;
+        --review: #D3AC63;
+        --review-soft: #332A16;
+    }
+}
 
-.hero {
-    background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
-    border-radius: 18px;
-    padding: 28px 32px;
-    margin-bottom: 22px;
-    color: white;
-    box-shadow: 0 8px 24px rgba(67,56,202,0.25);
+html, body, [class*="css"] { font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.stApp { background: var(--paper); color: var(--ink); }
+/* :where() carries zero specificity so this base reset can never outrank a
+   component's own color rule below, regardless of selector type or source
+   order (a real bug caught while checking computed styles: .stApp div was
+   quietly beating single-class rules like .field-label). */
+:where(.stApp p, .stApp span, .stApp label, .stApp div) { color: var(--ink); }
+.block-container { padding-top: 2.2rem; max-width: 1180px; }
+
+section[data-testid="stSidebar"] { background: var(--surface-alt); border-right: 1px solid var(--border); }
+section[data-testid="stSidebar"] * { color: var(--ink) !important; }
+section[data-testid="stSidebar"] [data-baseweb="select"] > div {
+    background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 8px !important;
 }
-.hero h1 { font-size: 1.65rem; font-weight: 800; margin: 0 0 6px 0; color: white; }
-.hero p { font-size: 0.92rem; margin: 0; opacity: 0.88; line-height: 1.5; max-width: 780px; }
-.hero .badges { margin-top: 14px; }
-.pill {
-    display: inline-block; padding: 4px 12px; border-radius: 999px;
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
-    margin-right: 8px;
+.sidebar-eyebrow {
+    font-family: 'Public Sans', sans-serif; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; color: var(--ink-faint); margin: 0 0 10px 0;
 }
-.pill-live { background: rgba(34,197,94,0.18); color: #22c55e; border: 1px solid rgba(34,197,94,0.4); }
-.pill-replay { background: rgba(251,191,36,0.18); color: #fbbf24; border: 1px solid rgba(251,191,36,0.4); }
+.sidebar-disclosure {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; line-height: 1.6; color: var(--ink-faint);
+    border-top: 1px solid var(--border); padding-top: 14px; margin-top: 18px;
+}
+
+/* quiet top bar, no gradient hero */
+.topbar { border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 28px; }
+.topbar .kicker {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--accent); margin: 0 0 6px 0;
+}
+.topbar h1 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 560; font-size: 1.85rem; letter-spacing: -0.01em;
+    margin: 0 0 8px 0; color: var(--ink); text-wrap: balance;
+}
+.topbar p { font-size: 0.92rem; margin: 0 0 12px 0; color: var(--ink-soft); line-height: 1.55; max-width: 700px; }
+.status-line { display: flex; gap: 18px; flex-wrap: wrap; }
+.status-item {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--ink-faint);
+    display: flex; align-items: center; gap: 6px;
+}
+.status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.status-dot.replay { background: var(--review); }
+.status-dot.live { background: var(--genuine); }
 
 .card {
-    background: white; border-radius: 14px; padding: 20px 22px; margin-bottom: 18px;
-    box-shadow: 0 1px 3px rgba(15,15,40,0.06), 0 1px 2px rgba(15,15,40,0.04);
-    border: 1px solid #edeef5;
+    background: var(--surface); border-radius: 10px; padding: 22px 24px; margin-bottom: 18px;
+    border: 1px solid var(--border);
 }
 .card h3 {
-    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #6b6d8a; margin: 0 0 14px 0;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-faint); margin: 0 0 16px 0; font-family: 'Public Sans', sans-serif;
 }
-.verdict-row { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
-.verdict-badge {
-    font-size: 0.85rem; font-weight: 800; padding: 7px 16px; border-radius: 10px;
-    letter-spacing: 0.02em;
-}
-.verdict-genuine { background: #dcfce7; color: #15803d; }
-.verdict-tampered { background: #fee2e2; color: #b91c1c; }
-.verdict-unknown { background: #f1f2f8; color: #6b6d8a; }
 
-.conf-track { background: #eceef7; border-radius: 999px; height: 10px; width: 100%; overflow: hidden; margin-top: 10px; }
+/* the verdict panel is the dominant element on the page */
+.verdict-panel { background: var(--surface); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; }
+.verdict-panel .eyebrow {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-faint); padding: 22px 26px 0 26px; margin: 0;
+}
+.verdict-head { display: flex; align-items: center; gap: 16px; padding: 10px 26px 0 26px; }
+.verdict-seal {
+    width: 46px; height: 46px; min-width: 46px; border-radius: 50%; border: 2px solid currentColor;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 560;
+}
+.verdict-word {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 650; font-size: 2.1rem; letter-spacing: -0.01em;
+    margin: 0; line-height: 1.05;
+}
+.verdict-genuine { color: var(--genuine); }
+.verdict-tampered { color: var(--tampered); }
+.verdict-unknown { color: var(--ink-faint); }
+
+.conf-row { padding: 20px 26px 0 26px; }
+.conf-label {
+    font-size: 0.76rem; color: var(--ink-soft); margin: 0 0 6px 0; display: flex;
+    justify-content: space-between; align-items: baseline;
+}
+.conf-number {
+    font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 2.4rem;
+    font-variant-numeric: tabular-nums; line-height: 1; margin: 0 0 10px 0;
+}
+.conf-track { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; height: 8px; width: 100%; overflow: hidden; }
 .conf-fill { height: 100%; border-radius: 999px; }
 
-.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 6px; }
-.field-item { border-bottom: 1px solid #f1f2f8; padding-bottom: 8px; }
-.field-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: #9a9cc4; letter-spacing: 0.04em; }
-.field-value { font-size: 0.95rem; color: #1f2140; font-weight: 500; margin-top: 2px; }
+.verdict-conclusion {
+    margin: 20px 26px 0 26px; padding: 16px 20px; border-radius: 8px; font-size: 0.88rem; line-height: 1.55;
+}
+.verdict-conclusion b { font-weight: 700; }
+.verdict-conclusion.approve { background: var(--genuine-soft); color: var(--genuine); }
+.verdict-conclusion.reject { background: var(--tampered-soft); color: var(--tampered); }
+.verdict-conclusion.review { background: var(--review-soft); color: var(--review); }
+
+.verdict-panel .panel-foot {
+    margin-top: 20px; padding: 14px 26px; border-top: 1px solid var(--border);
+    background: var(--surface-alt); font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--ink-faint);
+}
+
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+.field-item { border-bottom: 1px solid var(--border); padding-bottom: 9px; }
+.field-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; color: var(--ink-faint); letter-spacing: 0.05em; }
+.field-value { font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; color: var(--ink); margin-top: 3px; }
 
 .explanation-box {
-    background: #f7f5ff; border-left: 4px solid #6d28d9; border-radius: 8px;
-    padding: 14px 18px; font-size: 0.92rem; color: #2e2a52; font-style: italic; line-height: 1.5;
+    background: var(--surface-alt); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+    padding: 14px 18px; font-size: 0.88rem; color: var(--ink-soft); line-height: 1.55; font-style: italic;
 }
 
 .case-card {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 16px; border-radius: 10px; background: #f9f9fd; margin-bottom: 8px;
-    border: 1px solid #eeeef7;
+    padding: 12px 16px; border-radius: 8px; background: var(--surface-alt); margin-bottom: 8px;
+    border: 1px solid var(--border);
 }
-.case-name { font-weight: 600; color: #1f2140; font-size: 0.88rem; }
-.case-tier { font-size: 0.74rem; color: #6b6d8a; }
-.sim-bar-track { background: #e6e7f4; border-radius: 999px; height: 6px; width: 100px; overflow: hidden; }
-.sim-bar-fill { height: 100%; background: #6d28d9; border-radius: 999px; }
-.sim-score { font-size: 0.78rem; font-weight: 700; color: #4338ca; margin-left: 8px; }
+.case-name { font-family: 'IBM Plex Mono', monospace; font-weight: 500; color: var(--ink); font-size: 0.82rem; }
+.case-tier { font-size: 0.72rem; color: var(--ink-faint); margin-top: 2px; }
+.sim-bar-track { background: var(--border); border-radius: 999px; height: 5px; width: 88px; overflow: hidden; }
+.sim-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.sim-score { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; font-weight: 600; color: var(--accent); margin-left: 8px; }
 
-.decision-banner {
-    border-radius: 14px; padding: 20px 24px; margin-bottom: 14px; color: white;
-}
-.decision-approve { background: linear-gradient(135deg, #16a34a, #22c55e); }
-.decision-reject { background: linear-gradient(135deg, #b91c1c, #ef4444); }
-.decision-review { background: linear-gradient(135deg, #b45309, #f59e0b); }
-.decision-banner .decision-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 4px; }
-.decision-banner .decision-sub { font-size: 0.85rem; opacity: 0.92; }
+hr { border-color: var(--border); }
 </style>
 """
 
@@ -137,13 +216,14 @@ def load_captured_predictions() -> list[dict]:
 
 
 def draw_tamper_regions(image: Image.Image, regions: list[list[int]]) -> Image.Image:
-    """Draws each tamper_regions bbox as a red rectangle overlay — pure PIL,
-    no model involved, safe to run on this machine.
+    """Draws each tamper_regions bbox as an outline overlay in the design
+    system's tampered color — pure PIL, no model involved, safe to run on
+    this machine.
     """
     annotated = image.convert("RGB").copy()
     draw = ImageDraw.Draw(annotated)
     for bbox in regions or []:
-        draw.rectangle(bbox, outline="#ef4444", width=5)
+        draw.rectangle(bbox, outline="#8C3B32", width=5)
     return annotated
 
 
@@ -162,19 +242,22 @@ def _as_case(prediction: dict) -> dict:
 
 
 def _confidence_color(confidence: float) -> str:
+    # var() references, not hardcoded hex — these get used in inline `style`
+    # attributes below, and a fixed hex there would ignore the dark-mode
+    # token overrides that every other color in this app respects.
     if confidence >= 0.7:
-        return "#16a34a"
+        return "var(--genuine)"
     if confidence <= 0.3:
-        return "#dc2626"
-    return "#d97706"
+        return "var(--tampered)"
+    return "var(--review)"
 
 
 def _decision_style(tier: str) -> tuple[str, str]:
     return {
-        "auto_approve": ("decision-approve", "✅ Auto-approved"),
-        "auto_reject": ("decision-reject", "⛔ Auto-rejected"),
-        "human_review": ("decision-review", "🕵️ Routed to human review"),
-    }.get(tier, ("decision-review", tier))
+        "auto_approve": ("approve", "Auto-approved"),
+        "auto_reject": ("reject", "Auto-rejected"),
+        "human_review": ("review", "Routed to human review"),
+    }.get(tier, ("review", tier))
 
 
 def main() -> None:
@@ -184,14 +267,15 @@ def main() -> None:
 
     st.markdown(
         """
-        <div class="hero">
-          <h1>🛡️ Adversarially-Robust Identity Document Verification</h1>
+        <div class="topbar">
+          <p class="kicker">Layer 1 + Layer 2 · working demo</p>
+          <h1>Identity document verification</h1>
           <p>Fine-tuned Qwen2.5-VL extracts fields and detects and localizes tampering, backed by
           retrieval over past-flagged cases and a cost-aware risk-tiering decision layer that writes
           a natural-language rationale for every routing decision.</p>
-          <div class="badges">
-            <span class="pill pill-replay">VLM inference: replayed (real, captured on Kaggle)</span>
-            <span class="pill pill-live">Retrieval + decision layer: live in this session</span>
+          <div class="status-line">
+            <span class="status-item"><span class="status-dot replay"></span>VLM inference — replayed, captured on Kaggle T4</span>
+            <span class="status-item"><span class="status-dot live"></span>Retrieval + decision layer — live in this session</span>
           </div>
         </div>
         """,
@@ -207,17 +291,17 @@ def main() -> None:
         )
         return
 
-    st.sidebar.markdown("### 📂 Example gallery")
+    st.sidebar.markdown('<p class="sidebar-eyebrow">Example gallery</p>', unsafe_allow_html=True)
     labels = [f"{TIER_LABELS.get(p.get('tier'), p.get('tier', 'unknown'))} — {Path(p['image_path']).name}"
               for p in predictions]
     selected_idx = st.sidebar.selectbox("Choose a document", range(len(predictions)),
-                                         format_func=lambda i: labels[i])
+                                         format_func=lambda i: labels[i], label_visibility="collapsed")
     example = predictions[selected_idx]
-    st.sidebar.markdown("---")
-    st.sidebar.caption(
-        "This dev machine has no GPU (~7.7GB RAM) and cannot load the fine-tuned VLM locally — "
-        "see PROJECT_STATUS.md. Every prediction shown here is real, captured from an actual "
-        "Kaggle T4 inference run, never fabricated."
+    st.sidebar.markdown(
+        '<p class="sidebar-disclosure">This dev machine has no GPU (~7.7GB RAM) and cannot load the '
+        "fine-tuned VLM locally — see PROJECT_STATUS.md. Every prediction shown here is real, captured "
+        "from an actual Kaggle T4 inference run, never fabricated.</p>",
+        unsafe_allow_html=True,
     )
 
     parsed = example.get("parsed") or {}
@@ -225,8 +309,31 @@ def main() -> None:
     confidence = example.get("confidence")
     verdict_class = {"genuine": "verdict-genuine", "tampered": "verdict-tampered"}.get(tamper_verdict,
                                                                                         "verdict-unknown")
+    seal_glyph = {"genuine": "✓", "tampered": "✕"}.get(tamper_verdict, "?")
 
-    col1, col2 = st.columns([1, 1], gap="medium")
+    # Retrieval runs before the verdict panel is rendered (even though the
+    # panel itself sits above the retrieval card visually) since
+    # explain_decision() below folds the retrieved cases into its rationale.
+    other_predictions = [p for i, p in enumerate(predictions) if i != selected_idx]
+    similar = []
+    if other_predictions:
+        other_cases = [_as_case(p) for p in other_predictions]
+        index = build_index(other_cases)
+        this_case = _as_case(example)
+        query_text = (f"{this_case.get('document_code', '')} tier: {this_case.get('tier', '')} "
+                      f"{this_case.get('explanation', '')}")
+        similar = query(index, query_text, top_k=min(3, len(other_cases)))
+
+    cost_config = load_yaml(str(COST_CONFIG_PATH))
+    tier_key, rationale, sub = None, None, ""
+    if confidence is not None:
+        from src.decision.risk_tiering import route
+        tier_key = route(confidence, cost_config)
+        rationale = explain_decision(example, cost_config, similar_cases=similar if similar else None)
+        rationale_lines = rationale.split("\n")
+        sub = rationale_lines[2] if len(rationale_lines) > 2 else ""
+
+    col1, col2 = st.columns([2, 3], gap="medium")
 
     with col1:
         st.markdown('<div class="card"><h3>Document image</h3>', unsafe_allow_html=True)
@@ -236,59 +343,66 @@ def main() -> None:
             regions = parsed.get("tamper_regions") or []
             st.image(draw_tamper_regions(image, regions) if regions else image, use_container_width=True)
             if regions:
-                st.caption("🔴 Red box(es): model-predicted tamper region(s)")
+                st.caption("Outlined region(s): model-predicted tamper location")
         else:
             st.error(f"Image not found: {image_path}")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        conf_pct = f"{confidence * 100:.0f}%" if confidence is not None else "—"
-        conf_color = _confidence_color(confidence) if confidence is not None else "#9a9cc4"
+        conf_pct = f"{confidence * 100:.0f}" if confidence is not None else "—"
+        conf_color = _confidence_color(confidence) if confidence is not None else "var(--ink-faint)"
         conf_width = f"{confidence * 100:.0f}%" if confidence is not None else "0%"
+        tier_label = TIER_LABELS.get(example.get("tier"), example.get("tier", "unknown"))
 
-        fields_html = "".join(
-            f'<div class="field-item"><div class="field-label">{label}</div>'
-            f'<div class="field-value">{parsed.get(key) or "—"}</div></div>'
-            for key, label in EXTRACTION_FIELDS
-        )
+        conclusion_html = ""
+        if tier_key is not None:
+            style_class, title = _decision_style(tier_key)
+            conclusion_html = (f'<div class="verdict-conclusion {style_class}"><b>{title}.</b> {sub}</div>')
 
         st.markdown(
             f"""
-            <div class="card">
-              <h3>Model verdict &amp; extraction</h3>
-              <div class="verdict-row">
-                <span class="verdict-badge {verdict_class}">{tamper_verdict.upper()}</span>
-                <span style="color:#6b6d8a; font-size:0.85rem;">confidence this document is genuine</span>
+            <div class="verdict-panel">
+              <p class="eyebrow">{tier_label}</p>
+              <div class="verdict-head">
+                <div class="verdict-seal" style="color:{conf_color};">{seal_glyph}</div>
+                <p class="verdict-word {verdict_class}">{tamper_verdict.upper()}</p>
               </div>
-              <div style="font-size:1.6rem; font-weight:800; color:{conf_color};">{conf_pct}</div>
-              <div class="conf-track"><div class="conf-fill" style="width:{conf_width}; background:{conf_color};"></div></div>
-              <div class="field-grid">{fields_html}</div>
+              <div class="conf-row">
+                <p class="conf-label"><span>Confidence this document is genuine</span></p>
+                <p class="conf-number" style="color:{conf_color};">{conf_pct}<span style="font-size:1.1rem;">%</span></p>
+                <div class="conf-track"><div class="conf-fill" style="width:{conf_width}; background:{conf_color};"></div></div>
+              </div>
+              {conclusion_html}
+              <div class="panel-foot">document · {Path(example["image_path"]).name}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        explanation = parsed.get("explanation") or "No explanation provided."
+    col3, col4 = st.columns([2, 3], gap="medium")
+
+    with col3:
+        fields_html = "".join(
+            f'<div class="field-item"><div class="field-label">{label}</div>'
+            f'<div class="field-value">{parsed.get(key) or "—"}</div></div>'
+            for key, label in EXTRACTION_FIELDS
+        )
+        st.markdown(
+            f'<div class="card"><h3>Extracted fields</h3><div class="field-grid">{fields_html}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        explanation = parsed.get("explanation") or "No explanation provided by the model for this example."
         st.markdown(
             f'<div class="card"><h3>Model explanation</h3>'
             f'<div class="explanation-box">&ldquo;{explanation}&rdquo;</div></div>',
             unsafe_allow_html=True,
         )
 
-    col3, col4 = st.columns([1, 1], gap="medium")
-
-    with col3:
+    with col4:
         st.markdown('<div class="card"><h3>Similar past-flagged cases · retrieval (live)</h3>',
                      unsafe_allow_html=True)
-        other_predictions = [p for i, p in enumerate(predictions) if i != selected_idx]
-        similar = []
-        if other_predictions:
-            other_cases = [_as_case(p) for p in other_predictions]
-            index = build_index(other_cases)
-            this_case = _as_case(example)
-            query_text = (f"{this_case.get('document_code', '')} tier: {this_case.get('tier', '')} "
-                          f"{this_case.get('explanation', '')}")
-            similar = query(index, query_text, top_k=min(3, len(other_cases)))
+        if similar:
             for c in similar:
                 sim_pct = max(0, min(100, round(c["similarity"] * 100)))
                 st.markdown(
@@ -307,36 +421,17 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
         else:
-            st.write("Not enough other examples in the gallery for a meaningful retrieval comparison.")
+            st.caption("Not enough other examples in the gallery for a meaningful retrieval comparison.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with col4:
-        st.markdown('<div class="card"><h3>Risk-tiered decision · cost-aware (live)</h3>',
-                     unsafe_allow_html=True)
-        if confidence is None:
-            st.write("No confidence score captured for this example — cannot route a decision.")
+        st.markdown('<div class="card"><h3>Full decision rationale</h3>', unsafe_allow_html=True)
+        if rationale is not None:
+            st.text(rationale)
         else:
-            cost_config = load_yaml(str(COST_CONFIG_PATH))
-            from src.decision.risk_tiering import route
-            tier_key = route(confidence, cost_config)
-            banner_class, banner_title = _decision_style(tier_key)
-            rationale = explain_decision(example, cost_config, similar_cases=similar if similar else None)
-            rationale_lines = rationale.split("\n")
-            sub = rationale_lines[2] if len(rationale_lines) > 2 else ""
-            st.markdown(
-                f"""
-                <div class="decision-banner {banner_class}">
-                  <div class="decision-title">{banner_title}</div>
-                  <div class="decision-sub">{sub}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            with st.expander("Full rationale"):
-                st.text(rationale)
+            st.caption("No confidence score captured for this example — cannot route a decision.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with st.expander("🔧 Raw model output (JSON) — for technical review"):
+    with st.expander("Raw model output (JSON) — for technical review"):
         st.json(parsed)
 
 

@@ -116,6 +116,29 @@ a{color:var(--teal);}
 }
 .trust-note svg{flex:none; margin-top:2px; color:var(--teal);}
 
+.live-upload{
+  border:1.5px solid var(--border); border-radius:var(--radius); padding:20px; margin-top:16px;
+  background:var(--card);
+}
+.live-tag{
+  display:inline-block; background:var(--orange); color:#fff; font-size:.62rem; font-weight:800;
+  letter-spacing:.05em; padding:2px 7px; border-radius:5px; vertical-align:middle; margin-left:6px;
+}
+.live-desc{font-size:.82rem; color:var(--ink-faint); line-height:1.55; margin:0 0 14px;}
+.endpoint-input{
+  width:100%; border:1px solid var(--border); border-radius:8px; padding:9px 12px; font-size:.82rem;
+  font-family:'JetBrains Mono',monospace; background:var(--bg); color:var(--ink); margin-bottom:10px;
+}
+.endpoint-input:focus{outline:none; border-color:var(--teal);}
+.upload-btn{
+  display:inline-flex; align-items:center; gap:8px; border:1.5px dashed var(--border); border-radius:9px;
+  padding:10px 16px; font-size:.85rem; font-weight:600; color:var(--ink-soft); cursor:pointer;
+  transition:border-color .15s, color .15s;
+}
+.upload-btn:hover{border-color:var(--teal); color:var(--teal);}
+.upload-status{font-size:.8rem; color:var(--ink-faint); margin-top:10px; line-height:1.5;}
+.upload-status.err{color:var(--tampered);}
+
 /* ---------- stat strip ---------- */
 .stat-strip{
   display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border);
@@ -269,7 +292,7 @@ footer a:hover{color:var(--teal);}
     <div class="hero-grid">
       <div class="hero-left">
         <h1>Detect tampered<br><span class="hl">identity documents</span></h1>
-        <p class="hero-sub">A vision-language model fine-tuned to catch five kinds of forgery — field edits, photo splices, diffusion inpainting, full synthetic fabrication, and screen recapture. Every result on this page is a real prediction from a real fine-tuned checkpoint, captured once and replayed here. This page does not run live inference on files you upload.</p>
+        <p class="hero-sub">A vision-language model fine-tuned to catch five kinds of forgery — field edits, photo splices, diffusion inpainting, full synthetic fabrication, and screen recapture. Every result on this page is a real prediction from a real fine-tuned checkpoint — explore 7 captured cases below, or connect a live session to analyze your own document for real.</p>
 
         <div class="case-picker">
           <div class="case-picker-head">
@@ -279,9 +302,24 @@ footer a:hover{color:var(--teal);}
           <div class="case-grid" id="caseGrid"></div>
         </div>
 
+        <div class="live-upload">
+          <div class="case-picker-head">
+            <h3>Or analyze your own <span class="live-tag">LIVE</span></h3>
+            <span>optional, session-based</span>
+          </div>
+          <p class="live-desc">Runs the real checkpoint on whatever you upload — not a replay. Needs a live session running (a free Kaggle-hosted link, since it changes each time that session restarts). No session yet? The captured cases above still show real, honestly-reported results.</p>
+          <input type="text" id="endpointInput" class="endpoint-input" placeholder="Paste the live session URL (e.g. https://xxxx.gradio.live)">
+          <label class="upload-btn" id="uploadBtn">
+            <input type="file" id="fileInput" accept="image/*" hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            Choose a document to analyze
+          </label>
+          <div id="uploadStatus" class="upload-status"></div>
+        </div>
+
         <div class="trust-note">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
-          <span>No uploads, no live inference. Every case above is a real captured prediction — including the ones where the model gets it wrong, reported honestly rather than left out.</span>
+          <span>Captured cases are real predictions replayed from past runs, not live inference. The live session above (when connected) runs real inference on your upload instead — either way, results are reported honestly, including when the model gets it wrong.</span>
         </div>
       </div>
 
@@ -424,11 +462,13 @@ function buildCaseGrid(){
 
 function openCase(i){
   ACTIVE = i;
-  const e = DATA[i];
+  document.querySelectorAll('.case-chip').forEach((btn, idx) => btn.classList.toggle('active', idx === i));
+  renderCase(DATA[i]);
+}
+
+function renderCase(e){
   const tone = toneOf(e.verdict);
   const verdictConfidence = e.verdict === 'genuine' ? e.confidence : (1 - e.confidence);
-
-  document.querySelectorAll('.case-chip').forEach((btn, idx) => btn.classList.toggle('active', idx === i));
 
   const regionBoxes = (e.regions_pct || []).map(r => `
     <div class="region-box" style="left:${r[0]}%; top:${r[1]}%; width:${Math.max(r[2]-r[0],0.5)}%; height:${Math.max(r[3]-r[1],0.5)}%;"></div>
@@ -538,10 +578,95 @@ function updateThemeIcon(){
     : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
 }
 
+function initLiveUpload(){
+  const endpointInput = document.getElementById('endpointInput');
+  const fileInput = document.getElementById('fileInput');
+  const status = document.getElementById('uploadStatus');
+
+  endpointInput.value = localStorage.getItem('liveEndpoint') || '';
+  endpointInput.addEventListener('change', () => {
+    localStorage.setItem('liveEndpoint', endpointInput.value.trim().replace(/\/$/, ''));
+  });
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const endpoint = endpointInput.value.trim().replace(/\/$/, '');
+    if (!endpoint) {
+      status.textContent = 'Paste the live session URL above first.';
+      status.className = 'upload-status err';
+      fileInput.value = '';
+      return;
+    }
+    localStorage.setItem('liveEndpoint', endpoint);
+
+    status.className = 'upload-status';
+    status.textContent = 'Uploading...';
+    document.querySelectorAll('.case-chip').forEach(btn => btn.classList.remove('active'));
+    ACTIVE = -1;
+
+    try {
+      // Gradio's HTTP API: upload the file to get a server-side path, then
+      // call the named endpoint with a FileData reference to it, then read
+      // the result off its SSE event stream. Real Gradio API mechanics, not
+      // guessed -- but this project has no way to test it against a live
+      // server until a real session is running, so treat the first real
+      // upload as the actual test, not this code review.
+      const form = new FormData();
+      form.append('files', file);
+      const uploadResp = await fetch(`${endpoint}/gradio_api/upload`, { method: 'POST', body: form });
+      if (!uploadResp.ok) throw new Error(`Upload failed (${uploadResp.status}). Check the session URL is correct and the session is still running.`);
+      const [uploadedPath] = await uploadResp.json();
+
+      status.textContent = 'Analyzing on the live checkpoint... this can take 10-60s (longer on a cold start).';
+
+      const callResp = await fetch(`${endpoint}/gradio_api/call/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: [{ path: uploadedPath, meta: { _type: 'gradio.FileData' } }] }),
+      });
+      if (!callResp.ok) throw new Error(`Analyze call failed (${callResp.status}).`);
+      const { event_id } = await callResp.json();
+
+      const resultResp = await fetch(`${endpoint}/gradio_api/call/analyze/${event_id}`);
+      if (!resultResp.ok || !resultResp.body) throw new Error(`No result stream (${resultResp.status}).`);
+
+      const reader = resultResp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const payload = JSON.parse(line.slice(6));
+            if (Array.isArray(payload)) { result = payload[0]; }
+          }
+        }
+        if (result) break;
+      }
+      if (!result) throw new Error('Live session returned no result.');
+
+      status.textContent = `Done in ${result.inference_seconds ?? '?'}s -- real inference, not a replay.`;
+      renderCase(result);
+      document.getElementById('analysisPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      status.className = 'upload-status err';
+      status.textContent = `Couldn't reach the live session: ${err.message}`;
+    } finally {
+      fileInput.value = '';
+    }
+  });
+}
+
 buildCaseGrid();
 const defaultIdx = DATA.findIndex(e => e.id === '54');
 openCase(defaultIdx >= 0 ? defaultIdx : 0);
 initTheme();
+initLiveUpload();
 </script>
 </body>
 </html>

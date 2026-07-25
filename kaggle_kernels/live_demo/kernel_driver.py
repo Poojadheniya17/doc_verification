@@ -41,6 +41,28 @@ subprocess.run(
     check=True,
 )
 
+# Real bug found on the first real run of this kernel: Gradio's own frpc-binary
+# downloader (needed for share=True's public tunnel) failed inside Kaggle's
+# environment with "Could not create share link. Missing file:
+# .../gradio/frpc/frpc_linux_amd64_v0.3", even though the file's actual URL is
+# reachable (verified directly: HTTP 200, ~11.9MB). Rather than trust Gradio's
+# internal downloader a second time, fetch it explicitly and place it at the
+# exact path Gradio expects, before launch() ever tries.
+import stat  # noqa: E402
+import urllib.request  # noqa: E402
+
+_frpc_dir = Path.home() / ".cache" / "huggingface" / "gradio" / "frpc"
+_frpc_path = _frpc_dir / "frpc_linux_amd64_v0.3"
+if not _frpc_path.is_file():
+    _frpc_dir.mkdir(parents=True, exist_ok=True)
+    print("=== Downloading gradio's frpc tunnel binary explicitly (own downloader failed on first run) ===",
+          flush=True)
+    urllib.request.urlretrieve("https://cdn-media.huggingface.co/frpc-gradio-0.3/frpc_linux_amd64", str(_frpc_path))
+    _frpc_path.chmod(_frpc_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"=== frpc binary in place: {_frpc_path} ({_frpc_path.stat().st_size} bytes) ===", flush=True)
+else:
+    print(f"=== frpc binary already present: {_frpc_path} ===", flush=True)
+
 candidates = [
     Path("/kaggle/input/doc-verification-data"),
     Path("/kaggle/input/datasets/poojadheniya/doc-verification-data"),

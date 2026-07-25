@@ -71,3 +71,4 @@ wandb/
 .DS_Store
 Thumbs.db
 .vscode/settings.json
+writeup/interview_prep.md

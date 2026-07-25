@@ -89,18 +89,20 @@ print(f"=== Built fixed eval set: {len(EVAL_SET)} examples "
       f"({sum(1 for e in EVAL_SET if e['tier'] == 'genuine')} genuine, "
       f"{sum(1 for e in EVAL_SET if e['tier'] != 'genuine')} tampered) ===", flush=True)
 
-# Round 0 baseline: v25 (LoRA r=16, capacity-restoration run — see
-# results/tables/phase4_sft_summary.md's "v25" section), not v24 (r=4).
-# This specific push tests whether v25's extra capacity alone changes the
-# single-class collapse seen against v24 in this same script — v25 was
-# trained on the identical tier1+tier2, 719-example, ~35:1-imbalanced data
-# as v24, so this isolates capacity from the (separate, not-yet-tested)
-# class-imbalance hypothesis.
-PHASE4_CHECKPOINT = str(INPUT_ROOT / "checkpoints" / "sft_v25_final")
+# Round 0 baseline: v26 (class-balanced retrain, r=8/384px — see
+# results/tables/phase4_sft_summary.md's "v26" section), not v24 (r=4,
+# imbalanced) or v25 (r=16, imbalanced, already shown NOT to fix the
+# collapse — see phase6_adversarial_rounds_summary.md's "v25 capacity-only
+# re-test" section, identical single-class collapse to v24). v26 was trained
+# on all 5 tiers with tampered examples oversampled to a real 1:1 ratio
+# (762 -> 1400 examples) — this is the decisive test of the class-imbalance
+# hypothesis: does removing the "always predict genuine" majority-class
+# shortcut actually produce varied, discriminating predictions?
+PHASE4_CHECKPOINT = str(INPUT_ROOT / "checkpoints" / "sft_v26_balanced")
 if not (Path(PHASE4_CHECKPOINT) / "adapter_model.safetensors").is_file():
-    raise RuntimeError(f"Expected the v25 checkpoint at {PHASE4_CHECKPOINT} — "
-                        f"check that checkpoints/sft_v25_final is included in the mounted dataset.")
-print(f"=== Round 0 baseline checkpoint: {PHASE4_CHECKPOINT} (v25, LoRA r=16) ===", flush=True)
+    raise RuntimeError(f"Expected the v26 checkpoint at {PHASE4_CHECKPOINT} — "
+                        f"check that checkpoints/sft_v26_balanced is included in the mounted dataset.")
+print(f"=== Round 0 baseline checkpoint: {PHASE4_CHECKPOINT} (v26, class-balanced, LoRA r=8) ===", flush=True)
 
 RESULTS_DIR = Path("/kaggle/working/results")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)

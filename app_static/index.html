@@ -69,7 +69,8 @@ a{color:var(--teal);}
 .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:1.05rem; letter-spacing:-.01em;}
 .brand svg{flex:none;}
 .navlinks{display:flex; align-items:center; gap:28px; font-size:.92rem; font-weight:500;}
-.navlinks a{color:var(--ink-soft); text-decoration:none; transition:color .15s;}
+.navlinks a{color:var(--ink-soft); text-decoration:none; transition:color .15s; padding-bottom:4px; border-bottom:2px solid transparent;}
+.navlinks a.active{color:var(--ink); border-bottom-color:var(--orange);}
 .navlinks a:hover{color:var(--teal);}
 .navlinks .gh{display:flex; align-items:center; gap:6px; color:var(--ink-soft);}
 .themebtn{
@@ -138,7 +139,8 @@ a{color:var(--teal);}
 .panel-head .case-id{font-size:.75rem; color:var(--ink-faint);}
 .panel-body{padding:20px; display:grid; grid-template-columns:1.05fr 1fr; gap:22px;}
 
-.doc-frame{position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:var(--bg);}
+.panel-col-left{position:sticky; top:84px; align-self:start;}
+.doc-frame{position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:var(--bg); margin-bottom:16px;}
 .doc-frame img{width:100%; display:block;}
 .region-box{
   position:absolute; border:2px solid var(--tampered); background:rgba(var(--tampered-rgb),.12);
@@ -247,7 +249,7 @@ footer a:hover{color:var(--teal);}
       Document Verification
     </div>
     <div class="navlinks">
-      <a href="#top">Overview</a>
+      <a href="#top" class="active">Overview</a>
       <a href="#how-it-works">How it works</a>
       <a href="#results">Results</a>
       <a class="gh" href="https://github.com/Poojadheniya17/doc_verification" target="_blank" rel="noopener">
@@ -449,28 +451,11 @@ function openCase(i){
       <span class="case-id">${e.tier_label} &middot; case ${e.id}</span>
     </div>
     <div class="panel-body">
-      <div>
+      <div class="panel-col-left">
         <div class="doc-frame">
           <img src="data:image/jpeg;base64,${e.image_b64}" alt="${e.tier_label} document">
           ${regionBoxes}
         </div>
-      </div>
-      <div>
-        <div class="verdict-row">
-          <div class="verdict-icon tone-${tone}">
-            ${tone === 'genuine'
-              ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>'
-              : tone === 'tampered'
-              ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>'
-              : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.3 18a2 2 0 001.7 3h16a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>'}
-          </div>
-          <h3 class="verdict-title tone-${tone}">${verdictLabel(e.verdict)}</h3>
-        </div>
-        <p class="verdict-desc">${verdictDesc(e.verdict)}</p>
-
-        <div class="conf-label"><span>Confidence in this verdict</span><span>${pct(verdictConfidence)}</span></div>
-        <div class="conf-track"><div class="conf-fill tone-${tone}" style="width:${(verdictConfidence*100).toFixed(1)}%"></div></div>
-        <div class="conf-foot">Derived from average token probability across the model's response &mdash; a generation-based proxy, not a calibrated probability.</div>
 
         <div class="info-grid">
           <div class="info-cell">
@@ -491,6 +476,28 @@ function openCase(i){
           </div>
         </div>
 
+        <div class="similar-list">
+          <h4>Similar past-flagged cases</h4>
+          ${similarRows}
+        </div>
+      </div>
+      <div>
+        <div class="verdict-row">
+          <div class="verdict-icon tone-${tone}">
+            ${tone === 'genuine'
+              ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>'
+              : tone === 'tampered'
+              ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+              : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.3 18a2 2 0 001.7 3h16a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>'}
+          </div>
+          <h3 class="verdict-title tone-${tone}">${verdictLabel(e.verdict)}</h3>
+        </div>
+        <p class="verdict-desc">${verdictDesc(e.verdict)}</p>
+
+        <div class="conf-label"><span>Confidence in this verdict</span><span>${pct(verdictConfidence)}</span></div>
+        <div class="conf-track"><div class="conf-fill tone-${tone}" style="width:${(verdictConfidence*100).toFixed(1)}%"></div></div>
+        <div class="conf-foot">Derived from average token probability across the model's response &mdash; a generation-based proxy, not a calibrated probability.</div>
+
         <div class="fields-block">
           <h4>Extracted fields</h4>
           ${fieldRows}
@@ -500,19 +507,17 @@ function openCase(i){
           <div class="rt-head"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 10h8M8 14h5M21 12c0 4.97-4.03 9-9 9-1.5 0-2.9-.37-4.14-1.02L3 21l1.02-3.86A8.96 8.96 0 013 12c0-4.97 4.03-9 9-9s9 4.03 9 9z"/></svg>Decision rationale (real, from the decision layer)</div>
           ${(e.rationale || 'No rationale generated.').replace(/</g, '&lt;')}
         </div>
-
-        <div class="similar-list">
-          <h4>Similar past-flagged cases</h4>
-          ${similarRows}
-        </div>
       </div>
     </div>
   `;
 }
 
 function initTheme(){
-  const saved = localStorage.getItem('theme');
-  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  // Default to light regardless of OS preference -- the design is built to match a
+  // specific light/white reference look, so a visitor on a dark-mode OS should still
+  // see that by default. Dark stays one click away and is remembered once chosen.
+  const saved = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
   updateThemeIcon();
   document.getElementById('themeToggle').addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme')

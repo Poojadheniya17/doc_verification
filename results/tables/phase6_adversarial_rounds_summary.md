@@ -73,13 +73,16 @@ baseline.
 This splits into two separate findings, worth keeping apart rather than
 reading as one mixed result.
 
-**Finding 1 (round 0): class-balancing fixed the base checkpoint.**
-Evaluated cold, with no retraining, the model isn't defaulting to one class
-anymore — it caught every tampered example in the set, got 6 of 10 genuine
-documents right, and only misfired on the other 4 (calling them tampered,
-not the reverse). A real false-positive bias, not a collapse, and a much
-more defensible failure mode for a fraud-detection system: nothing
-tampered slipped through as genuine.
+**Finding 1 (round 0): class-balancing fixed the base checkpoint — on this
+eval set.** Evaluated cold, with no retraining, the model isn't defaulting
+to one class anymore — it caught every tampered example in the set, got 6
+of 10 genuine documents right, and only misfired on the other 4 (calling
+them tampered, not the reverse). A real false-positive bias, not a
+collapse, and a much more defensible failure mode for a fraud-detection
+system: nothing tampered slipped through as genuine. This is a promising
+result, not a conclusive one — this is the same fixed 30-example set drawn
+from the training distribution, not the leave-one-attack-tier-out test
+that actually broke v24. See the leave-one-out re-validation status below.
 
 **Finding 2 (rounds 1-2): the adversarial-rounds retraining loop is
 separately fragile.** This undoes finding 1, but it's a different problem,
@@ -96,9 +99,14 @@ own — either a much smaller learning rate for these mini-retrains, or
 mixing the mined failures back in with a slice of the original training
 set instead of training on them in isolation.
 
-A full leave-one-out re-run on v26 wasn't done — the check above already
-answers the main question (does balancing fix the collapse), and a full
-5-fold retrain is a multi-hour job that isn't necessary to draw that
-conclusion. It would be the obvious next step with more time, and fixing
-the retraining-loop fragility above would be worth doing first so it
-doesn't mask what the base checkpoint actually learned.
+A full 5-fold leave-one-out re-run on v26 would cost ~27-28 GPU-hours,
+close to the entire weekly Kaggle free-tier quota, so it wasn't attempted
+in full. A scoped 2-fold version (tier2_splicing and tier4_full_synthetic
+held out) is running instead, as a real, time-boxed check of whether the
+round-0 result above generalizes to an attack type the balanced checkpoint
+never trained on. See `writeup/project_report.md` for status and results
+once both folds complete. Fixing the retraining-loop fragility above is
+still worth doing first for any *future* full 5-fold re-run, so that
+fragility doesn't get mixed into those numbers — it isn't a blocker for
+this 2-fold check, since no adversarial-round retraining happens here, only
+a fresh full retrain per fold.

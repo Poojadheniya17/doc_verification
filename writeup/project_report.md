@@ -499,15 +499,20 @@ procedure used to test it.
 | 1 | 4 failures mined from round 0 | 33.3% | genuine: 30 | genuine→genuine: 10, tampered→genuine: 20 |
 | 2 | 20 failures mined from round 1 | 66.7% | tampered: 30 | genuine→tampered: 10, tampered→tampered: 20 |
 
-**Finding 1: class-balancing fixes the base checkpoint.** Round 0 is v26
-evaluated cold, no retraining involved. The model isn't defaulting to one
-class anymore — it caught every tampered example in the set, got 6 of 10
-genuine documents right, and only misfired on the other 4 (calling them
-tampered, not the reverse). A real false-positive bias, and a much more
-defensible failure mode for a fraud-detection system than "always says
-genuine": nothing tampered slipped through. This is the direct answer to
-the question the whole v25/v26 investigation was chasing — capacity alone
-(v25) didn't fix the collapse, fixing the class ratio did.
+**Finding 1: class-balancing fixes the base checkpoint — on this eval set.**
+Round 0 is v26 evaluated cold, no retraining involved. The model isn't
+defaulting to one class anymore — it caught every tampered example in the
+set, got 6 of 10 genuine documents right, and only misfired on the other 4
+(calling them tampered, not the reverse). A real false-positive bias, and a
+much more defensible failure mode for a fraud-detection system than
+"always says genuine": nothing tampered slipped through. This is a
+promising, cheaply-obtained answer to the question the whole v25/v26
+investigation was chasing — capacity alone (v25) didn't fix the collapse,
+fixing the class ratio did — but it's promising, not conclusive: this is
+one 30-example set from the same distribution as training, not the
+leave-one-out, never-seen-attack-type test that v24 actually failed on.
+Whether the fix generalizes the same way is a separate, harder question,
+addressed directly below.
 
 **Finding 2: the adversarial-rounds retraining loop is separately fragile,
 independent of the checkpoint it starts from.** Rounds 1 and 2 are a
@@ -530,12 +535,21 @@ detection approach works once the data is balanced. Finding 2 says the
 adversarial-hardening step built on top of it needs its own fix before it's
 useful. Neither should be read as evidence against the other.
 
-A full leave-one-out re-run on v26 wasn't done — Finding 1 above already
-answers the main question, and a full 5-fold retrain is a multi-hour job
-that isn't necessary to draw that conclusion. It's the obvious next step
-with more time, and fixing Finding 2's retraining-loop fragility would be
-worth doing first so it doesn't mask what the base checkpoint actually
-learned in that re-run.
+A full 5-fold leave-one-out re-run on v26 would cost ~27-28 GPU-hours —
+close to the entire weekly Kaggle free-tier quota and longer than a single
+session reliably runs, so it wasn't attempted in full. A scoped 2-fold
+version is in progress instead (tier2_splicing and tier4_full_synthetic
+held out, chosen as a localized-forgery case and the most-different
+generalization case respectively), each fold a real full retrain on the
+balanced set — not a shortcut, just a smaller slice of the same experiment.
+As of this writing, fold 1 (tier2_splicing held out) is still training on
+Kaggle; neither fold's result is in yet, so Finding 1 above should be read
+as promising-but-unconfirmed until real leave-one-out numbers land here.
+Fixing Finding 2's retraining-loop fragility first would keep a
+future full re-run from mixing that separate bug into these numbers, but
+wasn't a blocker for this scoped check since no adversarial-round retraining
+is involved here — each fold trains once, directly on the balanced data,
+same as v26 itself.
 
 ## Limitations
 
@@ -627,9 +641,12 @@ learned in that re-run.
   learning rate for mini-retrains, or mixing mined failures back in with a
   slice of the original training set, so the loop stops erasing what the
   base checkpoint learned.
-- **Full leave-one-out re-run on v26**, once the retraining-loop fix above
-  lands, to confirm the class-balance fix generalizes to unseen tiers and
-  not just the fixed 30-example eval set.
+- **Full 5-fold leave-one-out re-run on v26.** A 2-fold scoped version
+  (tier2_splicing, tier4_full_synthetic) is in progress at time of writing
+  as a time-boxed check within a real compute budget; the remaining 3 folds
+  are the natural extension once time/compute allow, to confirm the
+  class-balance fix generalizes to unseen tiers and not just the fixed
+  30-example eval set.
 - **Resolve the v25 memory anomaly** — why LoRA rank r=16 OOM'd identically
   three times and then completed successfully with a real ~4GB margin on a
   fourth attempt, on the same base model/library versions/T4 tier.

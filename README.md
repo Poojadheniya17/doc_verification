@@ -214,9 +214,14 @@ analysis.
   real 1:1 ratio and retrained across all 5 tiers. Evaluated cold, it gets
   86.7% on a 30-example set and — more importantly — the predictions are
   actually varied: it catches every tampered example and only misfires on
-  genuine documents (calling them tampered, never the reverse). The
-  adversarial-rounds retraining loop itself turned out to be fragile even
-  starting from this checkpoint (a handful of mined examples is enough to
-  collapse it back to single-class), which is a separate, real finding —
-  full writeup in
+  genuine documents (calling them tampered, never the reverse). This is
+  promising, not conclusive — that 30-example set is drawn from the same
+  distribution as training, not the leave-one-attack-tier-out test that v24
+  actually failed. A scoped 2-fold leave-one-out re-validation is running
+  now to check whether the fix holds up against an unseen attack type; see
+  [writeup/project_report.md](writeup/project_report.md#fixing-the-actual-imbalance-v26)
+  for status. The adversarial-rounds retraining loop itself turned out to
+  be fragile even starting from this checkpoint (a handful of mined
+  examples is enough to collapse it back to single-class), which is a
+  separate, real finding — full writeup in
   [results/tables/phase6_adversarial_rounds_summary.md](results/tables/phase6_adversarial_rounds_summary.md).

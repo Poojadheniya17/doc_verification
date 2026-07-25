@@ -186,9 +186,9 @@ def main() -> None:
         """
         <div class="hero">
           <h1>🛡️ Adversarially-Robust Identity Document Verification</h1>
-          <p>Fine-tuned Qwen2.5-VL extracts fields, detects and localizes tampering, and explains its
-          reasoning — backed by retrieval over past-flagged cases and a cost-aware risk-tiering
-          decision layer.</p>
+          <p>Fine-tuned Qwen2.5-VL extracts fields and detects and localizes tampering, backed by
+          retrieval over past-flagged cases and a cost-aware risk-tiering decision layer that writes
+          a natural-language rationale for every routing decision.</p>
           <div class="badges">
             <span class="pill pill-replay">VLM inference: replayed (real, captured on Kaggle)</span>
             <span class="pill pill-live">Retrieval + decision layer: live in this session</span>

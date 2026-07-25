@@ -4,9 +4,9 @@
 package name for now: `doc_verification_system`.)*
 
 A fine-tuned vision-language model system that extracts identity document fields,
-detects and localizes tampering, reasons about risk in natural language, retrieves
-similar past-flagged cases as supporting evidence, and recommends a risk-tiered
-decision (auto-approve / auto-reject / human-review) under a configurable cost
+detects and localizes tampering, retrieves similar past-flagged cases as supporting
+evidence, and recommends a risk-tiered decision (auto-approve / auto-reject /
+human-review) with a natural-language rationale under a configurable cost
 tradeoff — with production benchmarking (fp16/INT8/INT4) reported alongside.
 
 Built as a research-grade portfolio project: real fine-tuning (SFT + QLoRA), not
@@ -34,9 +34,13 @@ to end before touching Layer 3 (optional).
 
 1. Extracts structured fields (name, DOB, ID number, address, expiry) as JSON
 2. Detects whether the document is tampered/forged, and localizes where
-3. Explains its reasoning in natural language
+3. Is prompted to explain its verdict in natural language, per document — in
+   practice this field is almost never populated by the current checkpoints
+   (a real, documented gap, see [Limitations](writeup/project_report.md#limitations))
 4. Retrieves similar past-flagged cases to support its verdict
-5. Recommends a risk-tiered decision based on a configurable cost matrix
+5. Recommends a risk-tiered decision based on a configurable cost matrix,
+   with a written, natural-language rationale for the routing decision
+   (this part works — see the demo)
 6. Reports its own production cost/latency tradeoffs at different quantization levels
 
 ## Core technical approach

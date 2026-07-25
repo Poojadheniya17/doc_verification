@@ -102,6 +102,15 @@ adversarial_rounds:
   # quantization bench) in the same week. Flagged here rather than silently scaled down.
   num_rounds: 3
   failure_sample_cap: 200   # max mined failure cases retrained on per round, VRAM/time bound
+  # FRAGILITY FIX (post-v26, real finding — see phase6_adversarial_rounds_summary.md's
+  # Finding 2): retraining rounds 1+ on just 4-20 mined failures, at the same
+  # learning_rate/num_epochs as a full ~1400-example run, was enough to overwrite most
+  # of what the full balanced set taught the model and collapse it back to single-class.
+  # Two changes, applied together: replay a random slice of the original balanced
+  # training set alongside the mined failures each round (rehearsal, so the mini-retrain
+  # isn't training on the failures in isolation), and retrain at a reduced learning rate.
+  replay_sample_size: 200      # examples resampled from the original balanced training set per round
+  mini_retrain_lr_scale: 0.25  # rounds 1+ use sft.learning_rate * this, not the full-run rate
 
 leave_one_out:
   tiers:

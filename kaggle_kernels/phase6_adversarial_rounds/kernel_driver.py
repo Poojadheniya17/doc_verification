@@ -3,11 +3,19 @@
 3 rounds (config/training_config.yaml's adversarial_rounds.num_rounds), each:
 evaluate the current model on a fixed eval set -> mine incorrect examples
 (capped at failure_sample_cap) -> retrain targeted on those failures ->
-repeat. Round 0 has no failures yet, so it reuses the existing Phase 4 (v24)
-checkpoint as-is rather than training on nothing; rounds 1+ resume from the
-previous round's adapter and retrain only on that round's mined failures
-(much smaller than a full retrain, so each of those rounds should be
-meaningfully faster than Phase 4's ~2h13m).
+repeat. Round 0 has no failures yet, so it reuses the existing checkpoint
+(v26) as-is rather than training on nothing.
+
+FRAGILITY FIX (real finding from the first v24/v25/v26 runs of this kernel —
+see phase6_adversarial_rounds_summary.md's Finding 2): rounds 1+ originally
+retrained on ONLY that round's mined failures (4-20 examples), at the same
+learning rate and epoch count as a full ~1400-example run. That was enough
+to overwrite most of what the balanced set taught the model and flip it back
+to single-class every round, regardless of which checkpoint it started from.
+Rounds 1+ now mix each round's mined failures with a random replay slice of
+the original balanced training set (adversarial_rounds.replay_sample_size),
+and retrain at a reduced learning rate (adversarial_rounds.mini_retrain_lr_scale)
+rather than the full-run rate.
 
 Same explicit-cleanup discipline as the leave-one-out kernel: Phase 4's whole
 v19-v23 OOM chain was root-caused (v24) to a leftover model reference from an
@@ -19,6 +27,7 @@ printed rather than assumed.
 import gc
 import json
 import os
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -53,6 +62,7 @@ import yaml  # noqa: E402
 from src.eval.adversarial_rounds import build_eval_set  # noqa: E402
 from src.eval.adversarial_rounds import run as run_adversarial_rounds  # noqa: E402
 from src.eval.finetuned_eval import eval_examples, load_finetuned_model  # noqa: E402
+from src.training.sft_train import balance_examples, build_sft_examples  # noqa: E402
 from src.training.sft_train import train as run_sft_train  # noqa: E402
 
 MODEL_CONFIG_PATH = str(INPUT_ROOT / "config" / "model_config.yaml")
@@ -84,6 +94,17 @@ for tier in ALL_TIERS:
 print(f"=== Available tier manifests: {sorted(tier_manifest_paths.keys())} ===", flush=True)
 
 GENUINE_MANIFEST = str(DATA_ROOT / "processed" / "genuine_manifest_templates.json")
+
+# Replay pool for rounds 1+ (see training_config.yaml's adversarial_rounds.replay_sample_size
+# comment): the same train-split, class-balanced set v26 itself trained on, so a mini-retrain
+# on mined failures is rehearsing alongside a slice of what the base checkpoint already
+# learned instead of training on the failures in isolation.
+REPLAY_POOL = build_sft_examples(GENUINE_MANIFEST, tier_manifest_paths, split="train")
+_class_balance_cfg = _training_config["sft"].get("class_balance")
+if _class_balance_cfg and _class_balance_cfg.get("oversample_tampered_to_ratio"):
+    REPLAY_POOL = balance_examples(REPLAY_POOL, _class_balance_cfg["oversample_tampered_to_ratio"])
+print(f"=== Replay pool for mini-retrains: {len(REPLAY_POOL)} examples (class-balanced) ===", flush=True)
+
 EVAL_SET = build_eval_set(GENUINE_MANIFEST, tier_manifest_paths, n_genuine=10, split="test")
 print(f"=== Built fixed eval set: {len(EVAL_SET)} examples "
       f"({sum(1 for e in EVAL_SET if e['tier'] == 'genuine')} genuine, "
@@ -125,21 +146,33 @@ def train_fn(failures: list[dict], round_num: int) -> str:
               f"({PHASE4_CHECKPOINT}) as this round's baseline, no retrain ===", flush=True)
         return _state["current_checkpoint"]
 
-    train_examples = [
+    mined_examples = [
         {"image_path": f["image_path"], "target": f["target"], "tier": f.get("tier", "adversarial_mined")}
         for f in failures if f.get("target")
     ]
-    print(f"=== Round {round_num}: retraining on {len(train_examples)} mined failures, "
-          f"resuming from {_state['current_checkpoint']} ===", flush=True)
-    if not train_examples:
+    if not mined_examples:
         print(f"=== Round {round_num}: no usable mined failures — keeping previous checkpoint unchanged ===",
               flush=True)
         return _state["current_checkpoint"]
 
+    # Fragility fix (see phase6_adversarial_rounds_summary.md's Finding 2): a mini-retrain
+    # on the mined failures alone, at the full-run learning rate, was enough to overwrite
+    # most of what the balanced set taught the model. Mix in a random replay slice of that
+    # original set, and retrain at a reduced learning rate.
+    adv_cfg = _training_config["adversarial_rounds"]
+    replay_size = min(adv_cfg.get("replay_sample_size", 200), len(REPLAY_POOL))
+    replay_examples = random.sample(REPLAY_POOL, replay_size)
+    train_examples = mined_examples + replay_examples
+    base_lr = _training_config["sft"]["learning_rate"]
+    mini_lr = base_lr * adv_cfg.get("mini_retrain_lr_scale", 1.0)
+    print(f"=== Round {round_num}: retraining on {len(mined_examples)} mined failures + "
+          f"{len(replay_examples)} replayed examples ({len(train_examples)} total), "
+          f"lr={mini_lr:.2e} (base {base_lr:.2e}), resuming from {_state['current_checkpoint']} ===", flush=True)
+
     final_dir = run_sft_train(
         model_config_path=MODEL_CONFIG_PATH, training_config_path=TRAINING_CONFIG_PATH,
         environment="kaggle", train_examples=train_examples, checkpoint_subdir=f"adv_round{round_num}",
-        resume_from_adapter=_state["current_checkpoint"],
+        resume_from_adapter=_state["current_checkpoint"], learning_rate=mini_lr,
     )
     free_gpu_memory(f"after training round {round_num}")
     _state["current_checkpoint"] = final_dir

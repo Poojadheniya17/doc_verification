@@ -344,7 +344,8 @@ def _default_tier_manifest_paths(paths: dict, tier_names: list[str]) -> dict[str
 
 def train(model_config_path: str, training_config_path: str, environment: str | None = None,
           tier_names: list[str] | None = None, train_examples: list[dict] | None = None,
-          checkpoint_subdir: str = "sft", resume_from_adapter: str | None = None) -> str | None:
+          checkpoint_subdir: str = "sft", resume_from_adapter: str | None = None,
+          learning_rate: float | None = None) -> str | None:
     """tier_names: which forgery tiers to include when building the training set
     (defaults to Phase 4's exact tier1+tier2 composition). Ignored if
     train_examples is given directly.
@@ -362,6 +363,13 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
     resume_from_adapter: see load_model_for_training(). Returns the final
     checkpoint's directory path (the "model_handle" train_fn callables hand to
     eval_fn), or None if training didn't run (local environment).
+
+    learning_rate: overrides training_config.yaml's sft.learning_rate when
+    given. Added for adversarial_rounds.py's mini-retrains (see
+    phase6_adversarial_rounds_summary.md's Finding 2): retraining a handful
+    of mined failures at the same LR used for a full ~1400-example run was
+    enough to overwrite most of what the full run taught the model. Defaults
+    to the config value, so every other caller is unaffected.
     """
     model_config = load_yaml(model_config_path)
     training_config = load_yaml(training_config_path)
@@ -447,7 +455,7 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
         output_dir=str(paths["checkpoint_root"] / checkpoint_subdir),
         per_device_train_batch_size=sft_cfg["per_device_train_batch_size"],
         gradient_accumulation_steps=sft_cfg["gradient_accumulation_steps"],
-        learning_rate=sft_cfg["learning_rate"],
+        learning_rate=learning_rate if learning_rate is not None else sft_cfg["learning_rate"],
         num_train_epochs=sft_cfg["num_epochs"],
         warmup_ratio=sft_cfg["warmup_ratio"],
         lr_scheduler_type=sft_cfg["lr_scheduler_type"],

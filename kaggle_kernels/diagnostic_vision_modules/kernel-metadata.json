@@ -1,0 +1,14 @@
+{
+  "id": "poojadheniya/doc-verification-diagnostic-vision-modules",
+  "title": "doc-verification diagnostic vision modules",
+  "code_file": "kernel_driver.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "enable_internet": true,
+  "dataset_sources": ["poojadheniya/doc-verification-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

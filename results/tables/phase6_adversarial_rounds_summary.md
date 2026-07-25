@@ -94,10 +94,13 @@ apparently enough to overwrite most of what the 1400-example balanced set
 taught it, which is a lot of forgetting for such a small update. The same
 loop produced identical single-class collapses on v24 and v25 too, so this
 isn't new behavior — it's just now clearly separable from the class-
-imbalance problem instead of getting blamed on it. Worth fixing on its
-own — either a much smaller learning rate for these mini-retrains, or
-mixing the mined failures back in with a slice of the original training
-set instead of training on them in isolation.
+imbalance problem instead of getting blamed on it. A fix is implemented
+but not yet validated on Kaggle: the kernel driver now mixes each round's
+mined failures with a random replay slice of the original balanced
+training set and retrains at a fraction of the full-run learning rate
+(`config/training_config.yaml`'s `replay_sample_size` /
+`mini_retrain_lr_scale`), instead of training on the mined failures in
+isolation at the full rate.
 
 A full 5-fold leave-one-out re-run on v26 would cost ~27-28 GPU-hours,
 close to the entire weekly Kaggle free-tier quota, so it wasn't attempted

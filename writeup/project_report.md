@@ -525,10 +525,15 @@ handful of examples is enough to overwrite most of what the 1400-example
 balanced set taught it, regardless of how good the starting point was. The
 same loop produced identical single-class collapses on v24 and v25 too, so
 this fragility isn't new to v26, it's just now clearly separable from the
-class-imbalance problem instead of getting attributed to it. Worth fixing
-on its own — either a much smaller learning rate for these mini-retrains,
-or mixing mined failures back in with a slice of the original training set
-instead of training on them in isolation.
+class-imbalance problem instead of getting attributed to it. A fix is
+implemented but not yet validated on Kaggle: the kernel driver now mixes
+each round's mined failures with a random replay slice of the original
+balanced training set and retrains at a fraction of the full-run learning
+rate (`config/training_config.yaml`'s `replay_sample_size` /
+`mini_retrain_lr_scale`), instead of training on the mined failures in
+isolation at the full rate. Queued to run after the current leave-one-out
+re-validation, since Kaggle's free tier only reliably runs one GPU kernel
+at a time.
 
 Both findings matter for different reasons: Finding 1 says the core
 detection approach works once the data is balanced. Finding 2 says the
@@ -583,12 +588,13 @@ same as v26 itself.
   real follow-up experiment, not a quick correction — documented here as a
   known limitation rather than fixed live.
 
-- **The adversarial-rounds retraining loop is fragile, even on a
+- **The adversarial-rounds retraining loop was fragile, even on a
   checkpoint that discriminates well.** v26's base checkpoint shows real,
   varied, mostly-correct predictions, but 3-epoch retrains on 4-20 mined
-  examples collapse it back to single-class within one round. This is
-  separate from the original class-imbalance problem and still needs a
-  fix — see Results above.
+  examples collapsed it back to single-class within one round. Separate
+  from the original class-imbalance problem. A fix (replay-mixing + reduced
+  learning rate for mini-retrains) is implemented but not yet validated on
+  Kaggle — see Results above.
 - **v24 and v25 show no evidence of learned tamper discrimination.**
   Leave-one-out (5 full retrains), adversarial rounds, and quantization
   benchmarking all independently show these checkpoints collapsing to a
@@ -637,10 +643,11 @@ same as v26 itself.
   it populated during training — see Limitations. Needs per-tier template
   logic in `build_sft_examples()` plus a full retrain; a real follow-up
   experiment, not a quick patch.
-- **Fix the adversarial-rounds retraining loop's fragility** — a smaller
-  learning rate for mini-retrains, or mixing mined failures back in with a
-  slice of the original training set, so the loop stops erasing what the
-  base checkpoint learned.
+- **Validate the adversarial-rounds retraining-loop fix on Kaggle.** The
+  code fix (replay-mixing + reduced learning rate for mini-retrains, see
+  Results above) is implemented but hasn't been run yet — needs a real
+  re-run of rounds 1-2 against v26 to confirm predictions stay varied
+  instead of flipping back to single-class.
 - **Full 5-fold leave-one-out re-run on v26.** A 2-fold scoped version
   (tier2_splicing, tier4_full_synthetic) is in progress at time of writing
   as a time-boxed check within a real compute budget; the remaining 3 folds

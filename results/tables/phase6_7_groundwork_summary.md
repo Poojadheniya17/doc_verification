@@ -94,7 +94,6 @@ confirmed working this phase, having sat unused since Phase 1).
 - Actually running leave-one-out folds and adversarial-round retraining (both
   need real QLoRA training, N times over)
 - Financial risk reasoning (`src/decision/financial_risk_reasoning.py`) — an
-  LLM-generated recommendation, needs the fine-tuned model; not attempted this
-  phase since the user's request scoped this session to logic that doesn't
-  need one
+  LLM-generated recommendation, needs the fine-tuned model; scoped out of this
+  phase since it's the one piece of Phase 7 that actually needs one
 - Tier 3 diffusion-inpainting inference (unchanged from Phase 5)

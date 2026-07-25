@@ -70,22 +70,31 @@ baseline.
 | 1 | 4 failures mined from round 0 | 33.3% | genuine: 30 | genuine→genuine: 10, tampered→genuine: 20 |
 | 2 | 20 failures mined from round 1 | 66.7% | tampered: 30 | genuine→tampered: 10, tampered→tampered: 20 |
 
-Round 0 is the one that matters. The model isn't defaulting to one class —
-it caught every tampered example in the set, got 6 of 10 genuine documents
-right, and only misfired on the other 4 (calling them tampered, not the
-reverse). A real false-positive bias, not a collapse, and a much more
-defensible failure mode for a fraud-detection system: nothing tampered
-slipped through as genuine.
+This splits into two separate findings, worth keeping apart rather than
+reading as one mixed result.
 
-Rounds 1 and 2 undo it. Retraining on just 4 mined examples flips the whole
-model back to single-class, and retraining on 20 flips it to the opposite
-class. So the base v26 checkpoint isn't the problem anymore — the
-adversarial-rounds retraining loop is. A full 3-epoch retrain on a handful
-of examples is apparently enough to overwrite most of what the 1400-example
-balanced set taught it, which is a lot of forgetting for such a small
-update. Worth fixing on its own — either a much smaller learning rate for
-these mini-retrains, or mixing the mined failures back in with a slice of
-the original training set instead of training on them in isolation.
+**Finding 1 (round 0): class-balancing fixed the base checkpoint.**
+Evaluated cold, with no retraining, the model isn't defaulting to one class
+anymore — it caught every tampered example in the set, got 6 of 10 genuine
+documents right, and only misfired on the other 4 (calling them tampered,
+not the reverse). A real false-positive bias, not a collapse, and a much
+more defensible failure mode for a fraud-detection system: nothing
+tampered slipped through as genuine.
+
+**Finding 2 (rounds 1-2): the adversarial-rounds retraining loop is
+separately fragile.** This undoes finding 1, but it's a different problem,
+not a contradiction of it. Retraining on just 4 mined examples flips the
+whole model back to single-class, and retraining on 20 flips it to the
+opposite class. The base v26 checkpoint isn't the issue here — the
+retraining loop is. A full 3-epoch retrain on a handful of examples is
+apparently enough to overwrite most of what the 1400-example balanced set
+taught it, which is a lot of forgetting for such a small update. The same
+loop produced identical single-class collapses on v24 and v25 too, so this
+isn't new behavior — it's just now clearly separable from the class-
+imbalance problem instead of getting blamed on it. Worth fixing on its
+own — either a much smaller learning rate for these mini-retrains, or
+mixing the mined failures back in with a slice of the original training
+set instead of training on them in isolation.
 
 A full leave-one-out re-run on v26 wasn't done — the check above already
 answers the main question (does balancing fix the collapse), and a full

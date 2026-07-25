@@ -488,8 +488,10 @@ reflects the model actually attempting discrimination rather than being
 worse-trained. That's a hypothesis, not something the loss number alone can
 prove.
 
-Running adversarial-rounds against v26 gave the decisive answer, and it's
-more nuanced than a clean yes or no:
+Running adversarial-rounds against v26 answers the main question, but the
+result splits into two separate findings that shouldn't get blended
+together — one about the checkpoint itself, one about the retraining
+procedure used to test it.
 
 | Round | Retrained on | Accuracy | Predicted verdicts | Confusion (true → pred) |
 |---|---|---|---|---|
@@ -497,29 +499,43 @@ more nuanced than a clean yes or no:
 | 1 | 4 failures mined from round 0 | 33.3% | genuine: 30 | genuine→genuine: 10, tampered→genuine: 20 |
 | 2 | 20 failures mined from round 1 | 66.7% | tampered: 30 | genuine→tampered: 10, tampered→tampered: 20 |
 
-Round 0 is the important one. The model isn't defaulting to one class
-anymore — it caught every tampered example in the set, got 6 of 10 genuine
-documents right, and only misfired on the other 4 (calling them tampered,
-not the reverse). A real false-positive bias, and a much more defensible
-failure mode for a fraud-detection system than "always says genuine":
-nothing tampered slipped through.
+**Finding 1: class-balancing fixes the base checkpoint.** Round 0 is v26
+evaluated cold, no retraining involved. The model isn't defaulting to one
+class anymore — it caught every tampered example in the set, got 6 of 10
+genuine documents right, and only misfired on the other 4 (calling them
+tampered, not the reverse). A real false-positive bias, and a much more
+defensible failure mode for a fraud-detection system than "always says
+genuine": nothing tampered slipped through. This is the direct answer to
+the question the whole v25/v26 investigation was chasing — capacity alone
+(v25) didn't fix the collapse, fixing the class ratio did.
 
-Rounds 1 and 2 undo it. Retraining on just 4 mined examples flips the whole
-model back to single-class, and retraining on 20 flips it to the opposite
-class. So the base v26 checkpoint isn't the problem anymore — the
-adversarial-rounds retraining loop is. A full 3-epoch retrain on a handful
-of examples is apparently enough to overwrite most of what the
-1400-example balanced set taught it. Worth fixing on its own — either a
-much smaller learning rate for these mini-retrains, or mixing mined
-failures back in with a slice of the original training set instead of
-training on them in isolation.
+**Finding 2: the adversarial-rounds retraining loop is separately fragile,
+independent of the checkpoint it starts from.** Rounds 1 and 2 are a
+different experiment layered on top of Finding 1, and they undo it.
+Retraining on just 4 mined examples flips the whole model back to
+single-class, and retraining on 20 flips it to the opposite class. This
+isn't evidence the balanced checkpoint stopped working — round 0 already
+showed it discriminates — it's evidence that a full 3-epoch retrain on a
+handful of examples is enough to overwrite most of what the 1400-example
+balanced set taught it, regardless of how good the starting point was. The
+same loop produced identical single-class collapses on v24 and v25 too, so
+this fragility isn't new to v26, it's just now clearly separable from the
+class-imbalance problem instead of getting attributed to it. Worth fixing
+on its own — either a much smaller learning rate for these mini-retrains,
+or mixing mined failures back in with a slice of the original training set
+instead of training on them in isolation.
 
-A full leave-one-out re-run on v26 wasn't done — the check above already
+Both findings matter for different reasons: Finding 1 says the core
+detection approach works once the data is balanced. Finding 2 says the
+adversarial-hardening step built on top of it needs its own fix before it's
+useful. Neither should be read as evidence against the other.
+
+A full leave-one-out re-run on v26 wasn't done — Finding 1 above already
 answers the main question, and a full 5-fold retrain is a multi-hour job
-that isn't necessary to draw this conclusion. It's the obvious next step
-with more time, and fixing the retraining-loop fragility above would be
+that isn't necessary to draw that conclusion. It's the obvious next step
+with more time, and fixing Finding 2's retraining-loop fragility would be
 worth doing first so it doesn't mask what the base checkpoint actually
-learned.
+learned in that re-run.
 
 ## Limitations
 

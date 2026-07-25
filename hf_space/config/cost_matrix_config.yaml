@@ -1,0 +1,46 @@
+# Layer 2 cost matrix. These are REASONED ASSUMPTIONS for a portfolio project, not
+# real HyperVerge/industry figures — labeled clearly so this can't be mistaken for
+# sourced data in an interview. Each cost has a one-line rationale; change the numbers,
+# not the shape of the argument, if you want to explore different business contexts.
+
+currency: "USD"
+
+costs:
+  false_accept:
+    # A forged document that gets auto-approved becomes downstream fraud (loan default,
+    # account takeover, KYC breach). Set high relative to the others because this is the
+    # tail-risk the whole system exists to prevent — assumed order-of-magnitude estimate,
+    # not derived from a real loss model.
+    value: 500
+    rationale: "Assumed average downstream fraud loss per undetected forged document."
+
+  false_reject:
+    # A genuine document wrongly auto-rejected costs customer trust/churn + support
+    # overhead, but is recoverable (user can resubmit/appeal) — much cheaper than a
+    # false accept, but not free.
+    value: 50
+    rationale: "Assumed customer churn + support cost per wrongly rejected genuine user."
+
+  manual_review:
+    # Routing to a human reviewer costs analyst time but carries near-zero fraud risk.
+    # Cheapest option per-case, which is exactly why the risk-tiering logic should route
+    # uncertain cases here rather than force a binary auto-decision.
+    value: 5
+    rationale: "Assumed fully-loaded analyst cost per manual review, few minutes each."
+
+# Risk-tiering thresholds (on model confidence, 0-1) — starting point, swept and
+# re-derived empirically in Phase 7 against the actual cost curve, not fixed here.
+thresholds:
+  auto_approve_min_confidence: 0.95
+  auto_reject_max_confidence: 0.05
+  # anything between the two thresholds routes to human review by default
+
+# Grid searched by src/decision/cost_simulator.py's sweep_thresholds() to find
+# the empirically cost-minimizing thresholds against a real eval set, rather
+# than trusting the `thresholds` starting guess above. Kept coarse (6x6=36
+# valid combos, fewer once approve<=reject pairs are dropped) since it's
+# evaluated against a small local eval sample; refine if a real large eval
+# set justifies a finer grid.
+threshold_sweep:
+  auto_approve_candidates: [0.99, 0.95, 0.90, 0.85, 0.80, 0.70]
+  auto_reject_candidates: [0.01, 0.05, 0.10, 0.15, 0.20, 0.30]

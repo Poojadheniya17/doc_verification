@@ -1,0 +1,245 @@
+[
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/04.jpg",
+    "tier": "genuine",
+    "correct": false,
+    "predicted_verdict": "tampered",
+    "parse_success": true,
+    "parsed": {
+      "name": "Agron Albrup",
+      "dob": "21-01-1985",
+      "id_number": "807908701",
+      "address": null,
+      "expiry": "09-06-2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    },
+    "confidence": 0.017491492289531063,
+    "target": {
+      "name": "Agron Albrup",
+      "dob": "21-03-1985",
+      "id_number": "807908701",
+      "address": null,
+      "expiry": "09-06-2028",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    },
+    "document_code": "alb_id"
+  },
+  {
+    "image_path": "data/raw/midv2020_templates/images/alb_id/54.jpg",
+    "tier": "genuine",
+    "correct": true,
+    "predicted_verdict": "genuine",
+    "parse_success": true,
+    "parsed": {
+      "name": "Bajram Dedej",
+      "dob": "01-01-1999",
+      "id_number": "400211657",
+      "address": null,
+      "expiry": "04-07-2026",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    },
+    "confidence": 0.9877943853034249,
+    "target": {
+      "name": "Bajram Dedej",
+      "dob": "01-02-1999",
+      "id_number": "400211657",
+      "address": null,
+      "expiry": "04-07-2026",
+      "tamper_verdict": "genuine",
+      "tamper_regions": []
+    },
+    "document_code": "alb_id"
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier1_field_tamper/42_tier1.jpg",
+    "tier": "tier1_field_tamper",
+    "correct": true,
+    "predicted_verdict": "tampered",
+    "parse_success": true,
+    "parsed": {
+      "name": "ARMADS SALMI\u0145\u0160",
+      "dob": "14. 07. 1976.",
+      "id_number": "LV3516240",
+      "address": null,
+      "expiry": "10. 03. 2029.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          1470,
+          263,
+          1775,
+          327
+        ],
+        [
+          99,
+          1353,
+          2060,
+          1433
+        ]
+      ]
+    },
+    "confidence": 0.04778905627422758,
+    "target": {
+      "name": "ARMANDS SALMI\u0145\u0160",
+      "dob": "010776-99384",
+      "id_number": "LV3516240",
+      "address": null,
+      "expiry": "10.03.2029.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          1131,
+          679,
+          1529,
+          741
+        ],
+        [
+          1132,
+          864,
+          1738,
+          896
+        ]
+      ]
+    },
+    "document_code": "tier1_field_tamper"
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier2_splicing/42_spliced_48_tier2.jpg",
+    "tier": "tier2_splicing",
+    "correct": true,
+    "predicted_verdict": "tampered",
+    "parse_success": true,
+    "parsed": {
+      "name": "ARMANS SALMI\u0145\u0160",
+      "dob": "14. 07. 1976.",
+      "id_number": "LV3516240",
+      "address": null,
+      "expiry": "10. 03. 2029.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          136,
+          510,
+          578,
+          967
+        ]
+      ]
+    },
+    "confidence": 0.04692122750326033,
+    "target": {
+      "name": "ARMANDS SALMI\u0145\u0160",
+      "dob": "14.07.1976.",
+      "id_number": "LV3516240",
+      "address": null,
+      "expiry": "10.03.2029.",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          126,
+          506,
+          598,
+          978
+        ]
+      ]
+    },
+    "document_code": "tier2_splicing"
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier3_inpainting/alb_id_42_tier3.jpg",
+    "tier": "tier3_inpainting",
+    "correct": true,
+    "predicted_verdict": "tampered",
+    "parse_success": true,
+    "parsed": {
+      "name": "Armend Carcani",
+      "dob": "12-04-1977",
+      "id_number": "094713444",
+      "address": null,
+      "expiry": "11-06-2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          204,
+          328,
+          584,
+          746
+        ]
+      ]
+    },
+    "confidence": 0.026104748863534866,
+    "target": {
+      "name": "Armend Carcani",
+      "dob": "12-04-1977",
+      "id_number": "094713444",
+      "address": null,
+      "expiry": "11-06-2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": [
+        [
+          204,
+          328,
+          622,
+          746
+        ]
+      ]
+    },
+    "document_code": "tier3_inpainting"
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier4_full_synthetic/synthetic_PA0265774_tier4.jpg",
+    "tier": "tier4_full_synthetic",
+    "correct": true,
+    "predicted_verdict": "tampered",
+    "parse_success": true,
+    "parsed": {
+      "name": "JORDAN HARRIS",
+      "dob": "24.05.1970",
+      "id_number": "PA0265774",
+      "address": null,
+      "expiry": "04.11.2027",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    },
+    "confidence": 0.0007559313223912678,
+    "target": {
+      "name": "JORDAN HARRIS",
+      "dob": "24.05.1970",
+      "id_number": "PA0265774",
+      "address": null,
+      "expiry": "04.11.2027",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    },
+    "document_code": "tier4_full_synthetic"
+  },
+  {
+    "image_path": "data/synthetic_forgeries/tier5_recapture/alb_id_42_tier5.jpg",
+    "tier": "tier5_recapture",
+    "correct": true,
+    "predicted_verdict": "tampered",
+    "parse_success": true,
+    "parsed": {
+      "name": "Armend Carcani",
+      "dob": "12-05-1977",
+      "id_number": "094713444",
+      "address": null,
+      "expiry": "11-06-2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    },
+    "confidence": 0.011114167861449364,
+    "target": {
+      "name": "Armend Carcani",
+      "dob": "12-04-1977",
+      "id_number": "094713444",
+      "address": null,
+      "expiry": "11-06-2028",
+      "tamper_verdict": "tampered",
+      "tamper_regions": []
+    },
+    "document_code": "tier5_recapture"
+  }
+]

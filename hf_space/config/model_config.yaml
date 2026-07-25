@@ -1,0 +1,232 @@
+# Model + LoRA hyperparameters.
+#
+# DECISION (documented, not glossed over): the SFT training target is
+# Qwen2.5-VL-3B-Instruct, NOT the 7B variant used for the Phase 3 zero-shot
+# baseline. This is a deliberate pivot after extensive real-Kaggle debugging,
+# not an oversight or a silent scope cut. Full chain, in order:
+#
+#   1. 7B was the original target (rationale: largest VLM that should fit
+#      QLoRA 4-bit on a 16GB T4; bigger needs multi-GPU/paid compute, smaller
+#      2B/3B was assumed to sacrifice too much OCR/layout grounding for dense
+#      ID-document text — see results/tables/phase4_sft_summary.md for the
+#      full writeup of why that assumption turned out not to matter here).
+#   2. Kernels v8-v10: genuine CUDA OOM in the backward pass (486MB, then
+#      1.7GB short). Fixed correctly and confirmably: capped max_image_size
+#      (was uncapped), then PYTORCH_CUDA_ALLOC_CONF=expandable_segments,
+#      then reduced max_image_size/lora.r further (1280->896->768,
+#      r=16->12->8) — each fix visibly changed the OOM's exact shortfall,
+#      confirming they were real, working fixes for a real memory problem.
+#   3. Kernels v11-v13: once memory was no longer the constraint, training
+#      started silently HANGING instead of crashing — three different
+#      targeted fixes (paged optimizer swapped to non-paged adamw_bnb_8bit;
+#      then gradient_checkpointing_kwargs={"use_reentrant": False} for a
+#      documented reentrant-checkpointing deadlock class) each changed WHERE
+#      the hang occurred rather than resolving it. That shifting-failure-point
+#      pattern, not a single unlucky bug, is the actual evidence base for
+#      concluding this is a T4/library-stack compatibility issue at 7B scale
+#      in this environment — not something more config tuning was going to
+#      fix in reasonable time.
+#   4. Given (3), continuing to debug 7B further was judged not worth it.
+#      3B was selected as the SFT training target instead.
+#   5. The hang followed the model to 3B (kernel v14, identical config
+#      otherwise) — ruling out model size as the cause. Six further
+#      single-variable hypotheses were tested and ruled out in turn (v15-v18):
+#      DataLoader num_workers (confirmed already 0, not just assumed),
+#      gradient checkpointing disabled outright (v15 — hit an ordinary OOM
+#      instead, not the hang, proving checkpointing's memory savings were
+#      load-bearing but not testing the hang itself), explicit
+#      model.config.use_cache=False set proactively (v16), device_map="auto"
+#      swapped to device_map={"":0} to remove accelerate's dispatch hooks
+#      (v17 — this surfaced a genuinely different bug: this Kaggle instance
+#      has 2 visible GPUs, and transformers.Trainer auto-wraps in
+#      nn.DataParallel whenever torch.cuda.device_count()>1 unless it detects
+#      an existing accelerate multi-device map; device_map={"":0} doesn't
+#      count as one, so Trainer wrapped it anyway and DataParallel broke on
+#      the quantized+LoRA model), and CUDA_VISIBLE_DEVICES=0 to remove that
+#      second GPU from consideration entirely (v18 — fixed v17's
+#      DataParallel crash, confirmed by its absence, but the original hang
+#      still recurred, ruling out GPU-visibility as the hang's cause too).
+#   6. FINAL DECISION: stop debugging the hang. Fall back to gradient
+#      checkpointing disabled entirely (v15's approach), with max_image_size
+#      reduced further (768->512, see the model block below) to close v15's
+#      narrow ~40MiB OOM margin with real headroom. This is the SFT training
+#      configuration this project's reported results are trained under.
+#
+# CAVEAT this creates, stated plainly rather than buried: Phase 3's reported
+# zero-shot baseline (100% parse success, 88.9% tamper-verdict accuracy) is
+# for 7B — it succeeded and that number is being kept as-is. Comparing the 3B
+# fine-tune's results against that 7B zero-shot baseline conflates two
+# effects (fine-tuning gain AND a model-size difference) and is NOT a clean
+# ablation. Every place that comparison is reported (README, writeup) must
+# flag this explicitly, not present it as if 3B-vs-3B or 7B-vs-7B.
+model:
+  name: "Qwen/Qwen2.5-VL-3B-Instruct"
+  revision: "main"
+  trust_remote_code: true
+  torch_dtype: "bfloat16"           # compute dtype; base weights loaded in 4-bit (see quantization block)
+  # v19 (512px, checkpointing off) hit a real CUDA OOM (44MiB short) that ran
+  # backward from expectation: MORE total memory in use than v15 (768px, no
+  # library-version pins), despite the smaller images. Working hypothesis
+  # (never confirmed, and deliberately NOT investigated further — user's
+  # explicit call: "we don't need to understand why, we just need this to
+  # work") is that pinning exact library versions (v17/v18) changed something
+  # memory-relevant (e.g. a different default attention implementation)
+  # enough to swamp the image-size savings. Rather than chase that down,
+  # the chosen path is a bounded brute-force size reduction: step down in
+  # ~64-96px increments (this repo's actual value at any given time reflects
+  # the current attempt — check results/tables/phase4_sft_summary.md for the
+  # full v19+ attempt history) until training succeeds or a 256px floor is
+  # hit, below which field-extraction accuracy would be too degraded to be
+  # meaningful and the approach needs a real rethink instead of another cut.
+  #
+  # Honest quality cost, not hidden: every step down here is a real,
+  # increasing hit to OCR legibility for dense printed ID text (small MRZ
+  # lines, fine print). This is a deliberate tradeoff — training completing
+  # reliably beats a sharper image the training can't reliably run on — but
+  # it is a real, non-free cost to extraction accuracy that the clean-eval
+  # numbers must be read in light of.
+  # v25 DECISION (2026-07-24, overnight session): restored to 768px, up from
+  # the 256px floor v19-v23 were forced to. Real math, not a guess: v23's OOM
+  # traceback showed this process using 14.36GiB total at crash time; v24's
+  # real before/after GPU diagnostic later proved ~7.29GiB of that was a
+  # LEFTOVER 7B MODEL never freed between phases, not 3B training's own
+  # footprint. 3B's real footprint at 256px/r=4 was therefore only
+  # ~14.36 - 7.29 = ~7.07GiB against a ~14.56GiB budget — the entire v19-v23
+  # search was fighting a ceiling that was already ~2x lower than the real
+  # one, once the actual leak (fixed in v24, kept fixed here) is accounted
+  # for. Restoring image size (and LoRA rank, below) to test whether the
+  # adversarial-rounds single-class-collapse finding was a genuine model-
+  # capacity limitation or an artifact of unnecessarily aggressive cuts made
+  # while fighting the wrong problem. 768px matches the pre-panic value from
+  # the original 7B debugging chain (v12, see this file's top DECISION
+  # comment) — a principled reference point, not an arbitrary new number.
+  #
+  # v25 REAL RESULT, attempt 1 (768px + r=16 + seq=2048, all restored at
+  # once): OOM'd — "Tried to allocate 44.00 MiB... 8.81 MiB free... this
+  # process has 14.55 GiB memory in use" (of 14.56GiB).
+  #
+  # v25 REAL RESULT, attempt 2 (384px + r=16 + seq=1536, moderate step-down):
+  # OOM'd with the EXACT SAME numbers, byte for byte — same 44.00 MiB
+  # requested, same 8.81 MiB free, same 14.55 GiB in use, same 14.23 GiB
+  # PyTorch-allocated, same 190.79 MiB reserved-unallocated. Verified this
+  # wasn't a stale-config/mount-lag artifact via the diagnostic kernel
+  # (confirmed the mounted config genuinely had max_image_size=384,
+  # max_seq_length=1536, lora.r=16 at the time attempt 2 ran). A 4x pixel-area
+  # cut (768px->384px) and a 25% sequence-length cut producing IDENTICAL
+  # memory usage down to the byte is real evidence that image size and
+  # sequence length are NOT the dominant memory driver here — contradicting
+  # this file's own earlier reasoning. Trainable-param math (37.15M at r=16
+  # vs 9.28M at r=4, a ~28M-parameter difference) suggests LoRA rank alone
+  # should cost only ~150-200MB more in weights+gradients+8bit-optimizer-state
+  # — nowhere near the observed ~7.5GiB jump over v24's real ~7.07GiB
+  # footprint at r=4. This contradiction is itself the finding: something
+  # about r=16 specifically (interacting with bitsandbytes 4-bit dequant for
+  # the LoRA forward/backward, or peft's per-module state at this rank) is
+  # far more expensive than naive parameter-counting predicts, OR the
+  # image-size config genuinely isn't reaching the vision-token pipeline the
+  # way this project assumed (e.g. qwen_vl_utils' own internal resolution
+  # handling in process_vision_info() overriding the PIL thumbnail already
+  # applied).
+  #
+  # v25 REAL RESULT, attempt 3 (256px + r=16 + seq=1024, isolating rank
+  # alone): OOM'd with the EXACT SAME numbers a third time. This conclusively
+  # isolates the cause: LoRA rank r=16 itself (completely independent of
+  # image size or sequence length) triggers this. Researched rather than
+  # guessed further (web search): bitsandbytes/peft QLoRA dequantizes the
+  # relevant base weight to bf16 for the compute step regardless of rank, so
+  # that alone doesn't explain a rank-dependent jump — but re-examining this
+  # project's OWN already-collected v19-v23 data through the now-understood
+  # leak (~7.29GiB) gives a cleaner, evidence-based answer than further
+  # searching: v19 (512px, r=8, the value BEFORE this session's r=8->r=4
+  # cut) OOM'd using 14.55GiB total — real footprint (leak subtracted)
+  # ~7.26GiB. v20 (384px, r=8): ~6.74GiB real. v21 (320px, r=8): ~6.85GiB
+  # real. v22 (256px, r=8): ~7.04GiB real. Every one of these — image sizes
+  # 256-512px, ranks 4 OR 8 — lands in a tight ~6.7-7.3GiB band. The
+  # discontinuity is specifically between r=8 and r=16, not image size in
+  # this range. FINAL DECISION (2 of the user's 2-attempt research-informed
+  # budget): r=8 (not the proven-bad r=16, see lora.r below), max_image_size
+  # restored to 512px — v19's own exact, already-validated real-footprint
+  # data point (~7.26GiB, ~7.3GiB of headroom under the 14.56GiB budget) —
+  # a genuinely evidenced choice, not a new guess.
+  #
+  # REAL CORRECTION (v26, class-balanced retrain, 2026-07-24): this exact
+  # r=8/512px/max_seq_length=2048 combination had actually never been tested
+  # with a real training run before now -- the "final decision" v25 push
+  # intended to test it, but a real process error (dataset propagation lag)
+  # meant that kernel ran with a stale r=16 config instead (see
+  # phase4_sft_summary.md's "v25" section). When r=8/512px/seq=2048 finally
+  # ran for real (v26), it OOM'd immediately on the first training step:
+  # 374MiB short, 14.46GiB total in use -- nowhere near the inferred
+  # ~7.26GiB "safe" estimate above. That estimate was built on v19's OLD
+  # data, which predates max_seq_length even being wired into collate()
+  # (fixed in v23) -- v19 trained on genuinely uncapped sequences and still
+  # fit, so its real footprint was never a like-for-like comparison to a run
+  # that actually truncates to 2048 tokens. The inference was reasonable
+  # given what was known at the time; real data has now shown it wrong.
+  # Single best-reasoned fix applied (per the standing "one well-reasoned
+  # attempt, don't loop on variations" instruction): cut to 384px, based on
+  # the real, internally-consistent DELTA between v19 (512px) and v20
+  # (384px)'s original in-use numbers (14.55GiB vs 14.03GiB, ~520MiB real
+  # difference -- trustworthy as a delta even though each absolute number
+  # included the since-fixed ~7.29GiB leak equally). Applying that ~520MiB
+  # saving to v26's real 14.46GiB shortfall leaves ~600MB of margin under
+  # the 14.56GiB budget -- a real, evidence-based single fix, not a guess.
+  max_image_size: 384
+
+quantization:
+  # QLoRA: load frozen base in 4-bit NF4, train only LoRA adapters in bf16.
+  # Originally what made 7B trainable on a T4 at all; kept for 3B too even
+  # though 3B likely doesn't strictly need 4-bit to fit — consistent with the
+  # rest of this file, not re-tuned in the same change that swaps the model.
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+lora:
+  # r=16 -> r=12 -> r=8 -> r=4 (v19-v23) -> r=16 (v25 attempts 1-3, ALL
+  # OOM'd, byte-identical, regardless of image_size/max_seq_length — see
+  # model_config.yaml's max_image_size comment for the full real-numbers
+  # investigation) -> r=8 (this change, final decision).
+  #
+  # My own parameter-count math said r=16 should cost only ~150-200MB more
+  # than r=4 (28M extra params) — clearly wrong, since r=16 alone (at v24's
+  # otherwise-proven-safe 256px/seq=1024) consumed the ENTIRE 14.56GiB budget
+  # (14.55GiB in use) three times over, independent of image size or
+  # sequence length. Web search on bitsandbytes/peft QLoRA memory scaling
+  # didn't surface a definitive documented mechanism for this specific
+  # library-version combination — rather than keep guessing, re-examined
+  # this project's OWN already-collected v19-v22 data (originally run before
+  # the 7B-leak was understood) and subtracted the confirmed ~7.29GiB leak
+  # from each: v19 (512px, r=8): real footprint ~7.26GiB. v20 (384px, r=8):
+  # ~6.74GiB. v21 (320px, r=8): ~6.85GiB. v22 (256px, r=8): ~7.04GiB. Every
+  # one of these (image sizes 256-512px, r=4 OR r=8) lands in a tight
+  # ~6.7-7.3GiB band — real, already-validated evidence that r=8 is safe at
+  # up to 512px, and that the catastrophic jump is specific to r=16, not a
+  # gradual rank-memory scaling curve. r=8 restores meaningfully more
+  # capacity than v24's r=4 (doubles LoRA representational capacity, a
+  # config never actually OOM'd at up to 512px) while avoiding the r=16
+  # regime this session's real data shows is genuinely broken for reasons
+  # not fully understood (documented honestly as an open question — see
+  # results/tables/phase4_sft_summary.md — not swept under the rug). alpha
+  # kept at 2x r as throughout this project.
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+generation:
+  # Deterministic decoding for extraction/detection (reproducible eval); explanation
+  # generation (DPO stage) can override with sampling at inference time if needed.
+  max_new_tokens: 768
+  do_sample: false
+  temperature: 1.0

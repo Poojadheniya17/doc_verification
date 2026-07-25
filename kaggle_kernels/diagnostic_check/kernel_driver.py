@@ -51,6 +51,10 @@ v25_checkpoint_path = INPUT_ROOT / "checkpoints" / "sft_v25_final" / "adapter_mo
 print(f"=== v25 checkpoint exists: {v25_checkpoint_path.is_file()} ===", flush=True)
 if v25_checkpoint_path.is_file():
     print(f"=== v25 checkpoint size: {v25_checkpoint_path.stat().st_size} bytes (expect 148712776) ===", flush=True)
+v26_checkpoint_path = INPUT_ROOT / "checkpoints" / "sft_v26_balanced" / "adapter_model.safetensors"
+print(f"=== v26 checkpoint exists: {v26_checkpoint_path.is_file()} ===", flush=True)
+if v26_checkpoint_path.is_file():
+    print(f"=== v26 checkpoint size: {v26_checkpoint_path.stat().st_size} bytes (expect 74405904) ===", flush=True)
 
 print("=== Manifest path-separator check (backslash = broken on Linux) ===", flush=True)
 import json  # noqa: E402

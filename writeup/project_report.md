@@ -548,8 +548,14 @@ out, chosen as a localized-forgery case and the most-different
 generalization case respectively), each fold a real full retrain on the
 balanced set — not a shortcut, just a smaller slice of the same experiment.
 
-**Fold 1 (tier2_splicing held out): 13.3% accuracy (2/15 correct) — a real,
-weak result.** Full breakdown in `results/tables/phase6_leave_one_out_summary.md`.
+**Fold 1 (tier2_splicing held out): 13.3% accuracy (2/15 correct), 95% CI
+[0.0%, 33.3%] — a real, weak result.** The CI is wide at n=15, but even its
+upper bound is nowhere near 86.7%, so small-sample noise doesn't rescue the
+finding. Checked directly against this fold's own logs for a pipeline bug
+before trusting the number: training composition correctly excluded
+tier2_splicing, eval used the freshly-trained fold-specific checkpoint (not
+a stale one), and the scoring logic is simple and already unit-tested — no
+bug found. Full breakdown in `results/tables/phase6_leave_one_out_summary.md`.
 13 of 15 held-out splicing examples were misclassified "genuine," most with
 high confidence in that wrong verdict (0.95-0.99+ P(genuine)); only 2 of 15
 were correctly caught. This is not the same total collapse v24 showed (0/68,

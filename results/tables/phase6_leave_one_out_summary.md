@@ -89,10 +89,23 @@ instead: tier2_splicing (a localized-forgery case) and tier4_full_synthetic
 class-balanced set (`kaggle_kernels/phase6_leave_one_out_v26/`), not a
 shortcut.
 
-| Held-out tier | n | Accuracy | Predicted genuine | Predicted tampered |
-|---|---|---|---|---|
-| tier2_splicing | 15 | 0.133 | 13/15 | 2/15 |
-| tier4_full_synthetic | pending | — | — | — |
+| Held-out tier | n | Accuracy | 95% CI | Predicted genuine | Predicted tampered |
+|---|---|---|---|---|---|
+| tier2_splicing | 15 | 0.133 | [0.000, 0.333] | 13/15 | 2/15 |
+| tier4_full_synthetic | pending | — | — | — | — |
+
+The CI is wide at n=15, as expected -- but even its upper bound (33.3%) is
+nowhere near round 0's 86.7%, so small-sample noise doesn't rescue the
+finding. Before trusting the number at all, three real places a pipeline bug
+could hide were checked directly against this fold's actual logs, not
+assumed: (1) training composition -- confirmed `training on
+['tier1_field_tamper', 'tier3_inpainting', 'tier4_full_synthetic',
+'tier5_recapture']`, tier2_splicing genuinely excluded; (2) checkpoint used
+for eval -- confirmed `adapter=/kaggle/working/checkpoints/
+loo_v26_holdout_tier2_splicing/final`, the freshly-trained fold-specific
+adapter, not a stale one; (3) scoring logic (`load_tier_examples()`,
+`score_prediction()`) -- simple, already unit-tested, re-read and correct.
+No pipeline bug found; this is a real result, not an artifact.
 
 **Fold 1 (tier2_splicing) result: 13.3% (2/15 correct).** This is a real,
 weak result, and it changes what can honestly be claimed about v26. Round 0

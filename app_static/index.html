@@ -398,9 +398,14 @@ footer a:hover{color:var(--teal);}
           <div class="cap">5/5 leave-one-out folds collapsed to a single class</div>
         </div>
         <div class="result-card">
-          <div class="lbl">v26 (class-balanced)</div>
+          <div class="lbl">v26 (class-balanced), same-distribution eval</div>
           <div class="big">86.7%</div>
-          <div class="cap">Promising, not conclusive &mdash; one eval set, LOO re-validation in progress</div>
+          <div class="cap">n=30 &middot; fixed the easy-shortcut problem within the training distribution</div>
+        </div>
+        <div class="result-card">
+          <div class="lbl">v26, leave-one-out (unseen tier)</div>
+          <div class="big">13.3%</div>
+          <div class="cap">n=15, tier2_splicing held out &middot; 13/15 confidently misclassified genuine &mdash; generalization not confirmed</div>
         </div>
         <div class="result-card">
           <div class="lbl">Adversarial-round retrain</div>
@@ -409,7 +414,7 @@ footer a:hover{color:var(--teal);}
         </div>
       </div>
       <div class="callout" style="margin-top:20px;">
-        <b>Why this matters:</b> the first two checkpoints looked fine on paper (33&ndash;67% accuracy) until per-example inspection showed they'd collapsed to predicting one class regardless of input. Class-balancing the training data fixed it on the eval set used to test it &mdash; whether that holds up against an attack type the model never trained on is what the in-progress leave-one-out re-validation is checking. See the <a href="https://github.com/Poojadheniya17/doc_verification/blob/master/writeup/project_report.md" target="_blank" rel="noopener">full writeup</a> for every number, including the ones that didn't work.
+        <b>Why this matters:</b> the first two checkpoints looked fine on paper (33&ndash;67% accuracy) until per-example inspection showed they'd collapsed to predicting one class regardless of input. Class-balancing fixed that easy-shortcut collapse on the eval set used to test it &mdash; but the real generalization test (leave-one-out, holding an entire attack type out of training) tells a more cautious story: the first fold scored just 13.3%, most held-out examples confidently misclassified genuine. Fixing the shortcut and generalizing to a genuinely unseen tampering technique turned out to be different problems. See the <a href="https://github.com/Poojadheniya17/doc_verification/blob/master/writeup/project_report.md" target="_blank" rel="noopener">full writeup</a> for every number, including the ones that didn't work.
       </div>
     </div>
   </div>

@@ -740,6 +740,38 @@ fold trains once, directly on the balanced data, same as v26 itself.
   examples so "wholesale fake document" isn't a concept only tier4 ever
   demonstrates) rather than just more capacity. The vision-attention retrain
   (below) is a cheaper thing to try first, with tempered expectations.
+- **Regularity-disruption augmentation — designed, implemented, and unit-
+  tested; ready to run, pending GPU compute.** A real, direct application of
+  arXiv:2207.10402 ("Detecting Deepfake by Creating Spatio-Temporal
+  Regularity Disruption") to this project's setting, chosen after reading
+  that paper plus two others (UCF, arXiv:2304.13949; the quality-centric
+  curriculum framework, arXiv:2411.05335) and picking the one idea that
+  transfers cleanly to a single-image, LoRA-fine-tuned VLM with ~1400
+  training examples — the other two assume either a multi-decoder
+  architecture or a scoring/curriculum scheme neither of which fits this
+  project's setup without changes well beyond what QLoRA fine-tuning can
+  absorb. The core idea: instead of only teaching the 5 scripted tampering
+  signatures and hoping the model generalizes past their specific artifacts,
+  also teach it to recognize "disruption of local statistical regularity" as
+  a general signal, synthesized by directly perturbing genuine documents.
+  Implemented in `src/data_generation/regularity_disruption.py` as a new,
+  tier-agnostic augmentation category (never itself a leave-one-out held-out
+  target — it's meant to always be present in training) with 3 perturbation
+  kinds (`color`, `warp`, `noise_patch`) applied to a random localized region
+  of a genuine document; wired into `build_sft_examples()` in
+  `src/training/sft_train.py` alongside the 5 real tiers. 150 real examples
+  generated locally and visually verified (first-pass parameters were
+  checked against a real MIDV-2020 document and found completely invisible;
+  strengthened and re-verified before any tests were written). 5 new unit
+  tests added (determinism, bounds, "actually changes the image" across
+  multiple seeds, graceful failure on a missing file) — 73/73 project tests
+  passing. A new kernel driver
+  (`kaggle_kernels/phase6_leave_one_out_v28_regularity/`) re-runs the same
+  leave-one-out fold structure as v26 with this augmentation always included
+  in training, to give a direct, apples-to-apples answer on whether it closes
+  any of the real 13.3%/0.000% gap. Blocked only on GPU compute (Kaggle's
+  weekly quota was fully used validating v26's 2 folds; resets 2026-08-01) —
+  not on any remaining design or implementation work.
 - **Vision-attention LoRA retrain, tested against the tier2_splicing fold**
   (`kaggle_kernels/phase6_leave_one_out_v27_vision_attn/`) — extends LoRA to
   the vision encoder's attention layers (currently unadapted, per the

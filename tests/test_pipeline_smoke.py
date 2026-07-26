@@ -315,19 +315,31 @@ def test_build_sft_examples_from_fixture_manifests(tmp_path):
     tier5_path = tmp_path / "tier5.json"
     tier5_path.write_text(json.dumps(tier5_manifest), encoding="utf-8")
 
+    regularity_manifest = {"entries": [
+        {"success": True, "source_image": "g0.jpg", "forged_image": "g0_regularity.jpg",
+         "bbox_xyxy": [13, 14, 15, 16], "split": "train"},
+    ]}
+    regularity_path = tmp_path / "regularity.json"
+    regularity_path.write_text(json.dumps(regularity_manifest), encoding="utf-8")
+
     all_tiers = {
         "tier1_field_tamper": str(tier1_path), "tier2_splicing": str(tier2_path),
         "tier3_inpainting": str(tier3_path), "tier4_full_synthetic": str(tier4_path),
-        "tier5_recapture": str(tier5_path),
+        "tier5_recapture": str(tier5_path), "regularity_disruption": str(regularity_path),
     }
 
     train_examples = build_sft_examples(str(genuine_path), all_tiers, split="train")
-    # g1.jpg is split=test, so only g0's genuine + its tier1/2/3/5 derivatives land in
-    # train, plus tier4 (no split of its own, included unconditionally — see docstring)
-    assert len(train_examples) == 6
+    # g1.jpg is split=test, so only g0's genuine + its tier1/2/3/5/regularity derivatives
+    # land in train, plus tier4 (no split of its own, included unconditionally — see docstring)
+    assert len(train_examples) == 7
     tiers = {e["tier"] for e in train_examples}
     assert tiers == {"genuine", "tier1_field_tamper", "tier2_splicing", "tier3_inpainting",
-                      "tier4_full_synthetic", "tier5_recapture"}
+                      "tier4_full_synthetic", "tier5_recapture", "regularity_disruption"}
+
+    regularity_example = next(e for e in train_examples if e["tier"] == "regularity_disruption")
+    assert regularity_example["target"]["id_number"] == "X1"  # carried over from source, unchanged
+    assert regularity_example["target"]["tamper_verdict"] == "tampered"
+    assert regularity_example["target"]["tamper_regions"] == [[13, 14, 15, 16]]
 
     tier1_example = next(e for e in train_examples if e["tier"] == "tier1_field_tamper")
     assert tier1_example["target"]["id_number"] == "X9"  # overridden by the tamper

@@ -113,6 +113,15 @@ def build_sft_examples(genuine_manifest_path: str, tier_manifest_paths: dict[str
       ground truth is carried over from the source unchanged. tamper_regions=[]
       for the same reason as tier4 — a global quality transform, not a
       localized edit.
+    - regularity_disruption: not one of the 5 numbered tiers, and not scoped
+      to `tier_names` the way the others are — see
+      src/data_generation/regularity_disruption.py's module docstring. Same
+      shape as tier2/tier3 (source lookup, ground truth carried over
+      unchanged, single bbox_xyxy region), included via
+      tier_manifest_paths["regularity_disruption"] whenever a caller wants it
+      present (meant to be every training composition, including every
+      leave-one-out fold, since it's a generalization aid, not a held-out
+      test target).
     """
     examples = []
 
@@ -177,6 +186,26 @@ def build_sft_examples(genuine_manifest_path: str, tier_manifest_paths: dict[str
                 continue
             target = {**source_entry["ground_truth"], "tamper_verdict": "tampered", "tamper_regions": []}
             examples.append({"image_path": entry["forged_image"], "target": target, "tier": "tier5_recapture"})
+
+    # regularity_disruption: same shape as tier2_splicing/tier3_inpainting
+    # (source lookup, ground truth carried over unchanged, single bbox_xyxy
+    # region) -- see src/data_generation/regularity_disruption.py's module
+    # docstring for why this tier exists. Deliberately not one of the 5
+    # numbered escalating-sophistication tiers: it's meant to always be
+    # present in every training composition (including every leave-one-out
+    # fold), not held out as a generalization test target itself.
+    regularity_path = tier_manifest_paths.get("regularity_disruption")
+    if regularity_path and Path(regularity_path).exists():
+        regularity = json.loads(Path(regularity_path).read_text(encoding="utf-8"))
+        for entry in regularity["entries"]:
+            if not entry.get("success"):
+                continue
+            source_entry = genuine_by_path.get(entry["source_image"])
+            if not source_entry or source_entry["split"] != split or not source_entry.get("ground_truth"):
+                continue
+            target = {**source_entry["ground_truth"], "tamper_verdict": "tampered",
+                      "tamper_regions": [entry["bbox_xyxy"]]}
+            examples.append({"image_path": entry["forged_image"], "target": target, "tier": "regularity_disruption"})
 
     return examples
 

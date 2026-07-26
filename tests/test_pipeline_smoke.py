@@ -23,6 +23,11 @@ from src.data_generation.degrade import DEGRADATION_KINDS, degrade_image
 from src.data_generation.field_tamper import _mutate_digits
 from src.data_generation.inpaint_forger import build_inpaint_mask, inpaint_manifest
 from src.data_generation.recapture_sim import simulate_recapture
+from src.data_generation.regularity_disruption import (
+    DISRUPTION_KINDS,
+    _random_bbox,
+    generate_regularity_disruption,
+)
 from src.data_generation.synthetic_id_gen import _random_date, _random_id_number, _random_name, generate_synthetic_id
 from src.decision.cost_simulator import compute_cost, sweep_thresholds
 from src.decision.financial_risk_reasoning import explain_decision
@@ -578,6 +583,63 @@ def test_simulate_recapture_preserves_shape_and_is_deterministic(tmp_path):
     img2 = PILImage.open(r2["forged_image"])
     assert img1.size == (300, 200)
     assert np.array_equal(np.array(img1), np.array(img2))  # same seed -> identical output
+
+
+def test_random_bbox_stays_inside_image_bounds():
+    rng = random.Random(0)
+    for _ in range(50):
+        x0, y0, x1, y1 = _random_bbox(300, 200, rng)
+        assert 0 <= x0 < x1 <= 300
+        assert 0 <= y0 < y1 <= 200
+
+
+def test_generate_regularity_disruption_preserves_shape_and_is_deterministic(tmp_path):
+    src = tmp_path / "genuine.jpg"
+    _make_fake_image(src, size=(300, 200))
+    r1 = generate_regularity_disruption(str(src), str(tmp_path / "out1"), seed=5)
+    r2 = generate_regularity_disruption(str(src), str(tmp_path / "out2"), seed=5)
+    img1 = np.array(Image.open(r1["forged_image"]))
+    img2 = np.array(Image.open(r2["forged_image"]))
+    assert img1.shape == (200, 300, 3)
+    assert np.array_equal(img1, img2)  # same seed -> identical output, kind, and region
+    assert r1["disruption_kind"] == r2["disruption_kind"]
+    assert r1["bbox_xyxy"] == r2["bbox_xyxy"]
+
+
+def test_generate_regularity_disruption_actually_changes_the_image(tmp_path):
+    # A real bug caught before spending any GPU time on it: the first version
+    # of these perturbations was invisible on a real document (checked by eye,
+    # not just by this kind of pixel-diff assertion). This test only catches
+    # "did nothing at all"; the real strength check was visual.
+    #
+    # Uses a gradient fixture, not _make_fake_image's flat uniform color --
+    # warping a perfectly flat patch legitimately produces zero visible
+    # difference (there's nothing to warp), which a real document never is.
+    src = tmp_path / "genuine.jpg"
+    gradient = np.fromfunction(lambda y, x, c: (x + y) % 256, (200, 300, 3), dtype=np.float32).astype(np.uint8)
+    Image.fromarray(gradient).save(src)
+    for seed in range(10):  # exercise more than one disruption kind, not just whichever seed=1 picks
+        r = generate_regularity_disruption(str(src), str(tmp_path / f"out{seed}"), seed=seed)
+        original = gradient
+        disrupted = np.array(Image.open(r["forged_image"]))
+        x0, y0, x1, y1 = r["bbox_xyxy"]
+        assert not np.array_equal(original[y0:y1, x0:x1], disrupted[y0:y1, x0:x1]), \
+            f"seed={seed}, kind={r['disruption_kind']} produced no visible change"
+
+
+def test_generate_regularity_disruption_exercises_all_kinds_across_seeds(tmp_path):
+    src = tmp_path / "genuine.jpg"
+    _make_fake_image(src, size=(300, 200))
+    kinds_seen = set()
+    for seed in range(40):
+        r = generate_regularity_disruption(str(src), str(tmp_path / f"out{seed}"), seed=seed)
+        kinds_seen.add(r["disruption_kind"])
+    assert kinds_seen == set(DISRUPTION_KINDS)
+
+
+def test_generate_regularity_disruption_fails_gracefully_on_missing_image(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        generate_regularity_disruption(str(tmp_path / "nope.jpg"), str(tmp_path / "out"), seed=1)
 
 
 def test_collect_referenced_paths_dedupes_across_lists():

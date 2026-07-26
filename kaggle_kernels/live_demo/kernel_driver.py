@@ -1,20 +1,33 @@
 """Kaggle kernel: real live inference against the v26 checkpoint, exposed via
-a temporary public Gradio link (share=True).
+a temporary public URL through a Cloudflare quick tunnel.
 
 Why this exists instead of a hosted Space: Hugging Face Spaces (even free
 cpu-basic Gradio Spaces) currently require a PRO subscription on this brand-
 new HF account, and ZeroGPU needs PRO or a community grant -- both blocked
-without payment. Kaggle's free GPU tier plus Gradio's own free `share=True`
-tunnel gets the same real, live result (upload an image, get a real verdict
-back) at zero cost, reusing infrastructure this project already has fully
-working.
+without payment. Kaggle's free GPU tier gets the same real, live result
+(upload an image, get a real verdict back) at zero cost, reusing
+infrastructure this project already has fully working -- the only open
+question was how to expose it publicly for free.
 
-Real tradeoff, stated plainly: the public URL this produces is temporary --
-it lives only as long as this kernel session stays running (Kaggle's session
-cap, several hours), and a fresh run produces a new URL. Before an interview,
-re-run this kernel and grab the new "Running on public URL" line from its
-logs. Not a permanent hosted endpoint, but genuinely live, real inference --
-no captured/replayed data, same as every other honesty rule in this project.
+Real dead end, worth recording: Gradio's own `share=True` (frp-based tunnel)
+does NOT work from this Kaggle environment. First attempt failed with
+"Missing file: .../frpc_linux_amd64_v0.3" even though that file's URL is
+directly reachable (verified: HTTP 200) -- fixed by downloading it explicitly.
+Second attempt, with the binary now present, failed differently: "Could not
+create share link. Please check your internet connection or our status
+page" -- the frp tunnel PROTOCOL itself doesn't get through Kaggle's network
+sandboxing, not just a missing file. Switched to Cloudflare's free "quick
+tunnel" (`cloudflared tunnel --url ...`) instead: no account/token needed,
+and it rides over standard HTTPS (443) rather than frp's custom protocol,
+which is far more likely to survive a restrictive outbound network policy.
+
+Real tradeoff, stated plainly either way: the public URL this produces is
+temporary -- it lives only as long as this kernel session stays running
+(Kaggle's session cap, several hours), and a fresh run produces a new URL.
+Before an interview, re-run this kernel and grab the new
+"https://....trycloudflare.com" line from its logs. Not a permanent hosted
+endpoint, but genuinely live, real inference -- no captured/replayed data,
+same as every other honesty rule in this project.
 
 Same real pipeline as the rest of the project: finetuned_eval.run_single()
 for extraction/detection, retrieval.case_index for similar-case lookup
@@ -25,9 +38,12 @@ for routing and the written rationale.
 import base64
 import io
 import os
+import stat
 import subprocess
 import sys
+import threading
 import time
+import urllib.request
 from pathlib import Path
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -41,27 +57,15 @@ subprocess.run(
     check=True,
 )
 
-# Real bug found on the first real run of this kernel: Gradio's own frpc-binary
-# downloader (needed for share=True's public tunnel) failed inside Kaggle's
-# environment with "Could not create share link. Missing file:
-# .../gradio/frpc/frpc_linux_amd64_v0.3", even though the file's actual URL is
-# reachable (verified directly: HTTP 200, ~11.9MB). Rather than trust Gradio's
-# internal downloader a second time, fetch it explicitly and place it at the
-# exact path Gradio expects, before launch() ever tries.
-import stat  # noqa: E402
-import urllib.request  # noqa: E402
-
-_frpc_dir = Path.home() / ".cache" / "huggingface" / "gradio" / "frpc"
-_frpc_path = _frpc_dir / "frpc_linux_amd64_v0.3"
-if not _frpc_path.is_file():
-    _frpc_dir.mkdir(parents=True, exist_ok=True)
-    print("=== Downloading gradio's frpc tunnel binary explicitly (own downloader failed on first run) ===",
-          flush=True)
-    urllib.request.urlretrieve("https://cdn-media.huggingface.co/frpc-gradio-0.3/frpc_linux_amd64", str(_frpc_path))
-    _frpc_path.chmod(_frpc_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    print(f"=== frpc binary in place: {_frpc_path} ({_frpc_path.stat().st_size} bytes) ===", flush=True)
-else:
-    print(f"=== frpc binary already present: {_frpc_path} ===", flush=True)
+CLOUDFLARED_PATH = Path("/kaggle/working/cloudflared")
+if not CLOUDFLARED_PATH.is_file():
+    print("=== Downloading cloudflared (free quick-tunnel client, no account needed) ===", flush=True)
+    urllib.request.urlretrieve(
+        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
+        str(CLOUDFLARED_PATH),
+    )
+    CLOUDFLARED_PATH.chmod(CLOUDFLARED_PATH.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"=== cloudflared in place: {CLOUDFLARED_PATH} ({CLOUDFLARED_PATH.stat().st_size} bytes) ===", flush=True)
 
 candidates = [
     Path("/kaggle/input/doc-verification-data"),
@@ -214,5 +218,30 @@ with gr.Blocks(title="Document Verification -- live inference") as demo:
     btn = gr.Button("Analyze", variant="primary")
     btn.click(fn=analyze, inputs=inp, outputs=out, api_name="analyze")
 
-print("=== Launching Gradio with a public share link -- watch for 'Running on public URL' below ===", flush=True)
-demo.queue().launch(share=True, show_error=True)
+GRADIO_PORT = 7860
+print(f"=== Launching Gradio locally on port {GRADIO_PORT} (not sharing via Gradio's own tunnel -- "
+      f"see module docstring for why) ===", flush=True)
+demo.queue().launch(server_name="0.0.0.0", server_port=GRADIO_PORT, share=False,
+                     show_error=True, prevent_thread_lock=True)
+
+print("=== Starting cloudflared quick tunnel -- watch for a 'https://....trycloudflare.com' line below ===",
+      flush=True)
+tunnel_proc = subprocess.Popen(
+    [str(CLOUDFLARED_PATH), "tunnel", "--url", f"http://localhost:{GRADIO_PORT}"],
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+)
+
+
+def _stream_tunnel_output():
+    for line in tunnel_proc.stdout:
+        print(f"[cloudflared] {line}", end="", flush=True)
+
+
+threading.Thread(target=_stream_tunnel_output, daemon=True).start()
+
+# Keep the kernel session alive -- Gradio's own server thread (prevent_thread_lock)
+# and cloudflared's subprocess both run in the background; without this the main
+# script would reach EOF and Kaggle would tear the whole session (and tunnel) down.
+print("=== Live. Kernel will keep running (and the tunnel stay up) until this session ends. ===", flush=True)
+while True:
+    time.sleep(3600)

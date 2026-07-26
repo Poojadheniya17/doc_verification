@@ -6,6 +6,7 @@ peft==0.19.1
 accelerate==1.14.0
 bitsandbytes==0.49.2
 sentence-transformers
+faiss-cpu
 pillow
 numpy
 pyyaml

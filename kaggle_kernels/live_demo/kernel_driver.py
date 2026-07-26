@@ -53,7 +53,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 subprocess.run(
     [sys.executable, "-m", "pip", "install", "-q",
      "transformers==4.57.6", "qwen-vl-utils==0.0.14", "peft==0.19.1",
-     "accelerate==1.14.0", "bitsandbytes==0.49.2", "gradio", "sentence-transformers"],
+     "accelerate==1.14.0", "bitsandbytes==0.49.2", "gradio", "sentence-transformers", "faiss-cpu"],
     check=True,
 )
 

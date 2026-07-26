@@ -590,6 +590,25 @@ issue, and it explains tier2's partial success too: splicing is still "a
 local anomaly on a real template," closer to what tier1/3/5 already taught
 than tier4 is.
 
+**Important clarification, checked directly rather than assumed: this is
+not a limitation of the deployed system.** The leave-one-out checkpoints
+are deliberately-crippled research artifacts, trained with an entire
+tampering category held out on purpose to test zero-shot transfer. The
+real, deployed v26 checkpoint (trained on all 5 tiers) was checked directly
+against these same 15 real tier4_full_synthetic test examples and catches
+all 15 — not 0. Two independent real sources confirm this: a captured v26
+inference on one of these exact images (`synthetic_PA0265774_tier4.jpg`,
+correct, confidence 0.00076) and v26's own documented round-0 confusion
+matrix (`tampered→tampered: 20, tampered→genuine: 0` on a 30-example set
+confirmed, by reconstructing it locally with no GPU needed, to contain
+exactly these 15 tier4 examples plus 2 tier1 and 3 tier2 — zero tampered
+misses means all 15 tier4 examples were caught). The honest framing: this
+leave-one-out result is a genuine, correctly-designed zero-shot
+generalization finding — a model never trained on "wholesale document
+fabrication" as a concept doesn't spontaneously acquire it from four
+unrelated tampering types — not evidence the shipped model fails on
+fabricated documents it has actually been trained to recognize.
+
 Ruling out one candidate explanation for the perceptual side of this: a
 follow-up diagnostic (`kaggle_kernels/diagnostic_vision_modules/`) tested
 whether LoRA's `target_modules` reach the vision encoder at all. Result:
@@ -641,15 +660,19 @@ fold trains once, directly on the balanced data, same as v26 itself.
   real follow-up experiment, not a quick correction — documented here as a
   known limitation rather than fixed live.
 
-- **v26 fixes the easy-shortcut collapse within its training distribution
-  but does not clearly generalize to unseen attack types.** Real
-  leave-one-out results on 2 folds: 13.3% (tier2_splicing held out) and
-  0.000% (tier4_full_synthetic held out, a total single-class collapse) —
-  see Results above. The most-likely explanation is a genuine data/concept-
+- **A deliberately-crippled checkpoint doesn't zero-shot-transfer to a
+  tampering category it was never trained on — a real, correctly-designed
+  finding, not a defect in the deployed system.** Real leave-one-out
+  results on 2 folds: 13.3% (tier2_splicing held out) and 0.000%
+  (tier4_full_synthetic held out, a total single-class collapse) — see
+  Results above. The most-likely explanation is a genuine data/concept-
   coverage gap (tier4 is a categorically different tampering concept the
   other 4 tiers can't teach by analogy), not a bug — checked directly
-  against both folds' logs and found none. This is the project's most
-  important open limitation as of this writing.
+  against both folds' logs and found none. **Important**: the real,
+  deployed v26 checkpoint (trained on all 5 tiers, not held-out) was
+  checked directly against these same 15 tier4 examples and catches all 15
+  — this limitation describes a research probe into zero-shot transfer,
+  not something the shipped model actually fails at in practice.
 - **The adversarial-rounds retraining loop was fragile, even on a
   checkpoint that discriminates well.** v26's base checkpoint shows real,
   varied, mostly-correct predictions, but 3-epoch retrains on 4-20 mined

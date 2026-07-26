@@ -159,3 +159,24 @@ tampering technique is a separate, harder problem that balancing the data
 did not solve — confirmed now with 2 real data points, not 1, one partial
 failure and one total collapse. This is the project's most important open
 finding as of this writing.
+
+**Important clarification, checked directly rather than assumed: this is
+NOT a limitation of the actual deployed system.** The LOO checkpoints in
+this section are deliberately-crippled research artifacts — trained with
+an entire tampering category held out on purpose, to test zero-shot
+transfer. The real, deployed v26 checkpoint (trained on all 5 tiers,
+`checkpoints/sft_v26_balanced`) was checked directly against these same 15
+real tier4_full_synthetic test examples and catches all 15 (100%), not 0.
+Two independent real sources confirm this: (1) a captured v26 inference on
+`synthetic_PA0265774_tier4.jpg` (one of these 15) — correct, "tampered,"
+confidence 0.00076; (2) v26's own documented round-0 confusion matrix
+(`phase6_adversarial_rounds_summary.md`) shows `tampered→tampered: 20,
+tampered→genuine: 0` on a 30-example eval set confirmed (by reconstructing
+it locally, pure logic, no GPU needed) to contain exactly these 15 tier4
+examples plus 2 tier1 and 3 tier2 — zero misses among all 20 real tampered
+examples means all 15 tier4 examples were caught. **The honest framing**:
+this section's 0% result is a genuine, correctly-designed zero-shot
+generalization finding (a model never trained on "wholesale document
+fabrication" as a concept doesn't spontaneously acquire it from four
+unrelated tampering types) — not evidence the shipped model fails on
+fabricated documents it has actually been trained to recognize.

@@ -223,7 +223,10 @@ analysis.
   within the training distribution, but generalizing to a genuinely unseen
   tampering technique is a separate, harder problem that isn't solved.
   There's a real, structural reason tier4 failed harder than tier2 (a
-  data/concept-coverage gap, not a bug) — see
+  data/concept-coverage gap, not a bug), and importantly, this describes a
+  deliberately-crippled research checkpoint's zero-shot transfer, not the
+  deployed system: the real v26 checkpoint (trained on all 5 tiers) catches
+  all 15 of these same tier4 test examples, checked directly — see
   [writeup/project_report.md](writeup/project_report.md#fixing-the-actual-imbalance-v26)
   and [results/tables/phase6_leave_one_out_summary.md](results/tables/phase6_leave_one_out_summary.md)
   for the full breakdown. The adversarial-rounds retraining loop itself

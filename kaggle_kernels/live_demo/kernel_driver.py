@@ -102,13 +102,19 @@ print("=== Loading base model + v26 adapter (real 4-bit QLoRA, same as every oth
 MODEL, PROCESSOR = load_finetuned_model(MODEL_CONFIG, ADAPTER_PATH, device="cuda")
 print("=== Model loaded ===", flush=True)
 
+# Middle dot written as \u00b7 rather than a raw "\u00b7" character -- the real
+# first live run showed this rendering as mojibake ("\u00b7") in the API response,
+# most likely from kaggle-cli reading this source file with a non-UTF-8 default
+# encoding during push on this Windows machine. A plain-ASCII escape sequence
+# can't be mis-transcoded that way.
+MIDDOT = "\u00b7"
 TIER_LABELS = {
     "genuine": "Genuine",
-    "tier1_field_tamper": "Tier 1 · Field tamper",
-    "tier2_splicing": "Tier 2 · Photo splice",
-    "tier3_inpainting": "Tier 3 · Diffusion inpaint",
-    "tier4_full_synthetic": "Tier 4 · Full synthetic",
-    "tier5_recapture": "Tier 5 · Recapture",
+    "tier1_field_tamper": f"Tier 1 {MIDDOT} Field tamper",
+    "tier2_splicing": f"Tier 2 {MIDDOT} Photo splice",
+    "tier3_inpainting": f"Tier 3 {MIDDOT} Diffusion inpaint",
+    "tier4_full_synthetic": f"Tier 4 {MIDDOT} Full synthetic",
+    "tier5_recapture": f"Tier 5 {MIDDOT} Recapture",
 }
 
 # The 7 real captured cases (results/sample_outputs/captured_predictions.json),

@@ -216,17 +216,18 @@ analysis.
   actually varied: it catches every tampered example and only misfires on
   genuine documents (calling them tampered, never the reverse). That result
   is promising but doesn't hold up the same way under the real
-  leave-one-attack-tier-out test: a scoped 2-fold re-validation's first fold
-  (tier2_splicing held out) scored only 13.3% (2/15), 13 of 15 held-out
-  examples confidently misclassified "genuine." Class-balancing fixed the
-  easy-shortcut problem within the training distribution, but generalizing
-  to a genuinely unseen tampering technique is a separate, harder problem
-  that isn't solved yet — see
+  leave-one-attack-tier-out test: a scoped 2-fold re-validation scored 13.3%
+  (tier2_splicing held out, 2/15) and 0.0% (tier4_full_synthetic held out,
+  a total single-class collapse — 14/15 misclassified "genuine," zero ever
+  predicted "tampered"). Class-balancing fixed the easy-shortcut problem
+  within the training distribution, but generalizing to a genuinely unseen
+  tampering technique is a separate, harder problem that isn't solved.
+  There's a real, structural reason tier4 failed harder than tier2 (a
+  data/concept-coverage gap, not a bug) — see
   [writeup/project_report.md](writeup/project_report.md#fixing-the-actual-imbalance-v26)
   and [results/tables/phase6_leave_one_out_summary.md](results/tables/phase6_leave_one_out_summary.md)
-  for the full breakdown; fold 2 (tier4_full_synthetic) is running to check
-  whether this holds for a different held-out tier. The adversarial-rounds
-  retraining loop itself turned out to be fragile even starting from this
-  checkpoint (a handful of mined examples is enough to collapse it back to
-  single-class), which is a separate, real finding — full writeup in
+  for the full breakdown. The adversarial-rounds retraining loop itself
+  turned out to be fragile even starting from this checkpoint (a handful of
+  mined examples is enough to collapse it back to single-class), which is a
+  separate, real finding — full writeup in
   [results/tables/phase6_adversarial_rounds_summary.md](results/tables/phase6_adversarial_rounds_summary.md).

@@ -548,41 +548,66 @@ out, chosen as a localized-forgery case and the most-different
 generalization case respectively), each fold a real full retrain on the
 balanced set — not a shortcut, just a smaller slice of the same experiment.
 
+**Both folds are complete, and the real results are weak — 2 data points,
+not 1.**
+
 **Fold 1 (tier2_splicing held out): 13.3% accuracy (2/15 correct), 95% CI
-[0.0%, 33.3%] — a real, weak result.** The CI is wide at n=15, but even its
-upper bound is nowhere near 86.7%, so small-sample noise doesn't rescue the
-finding. Checked directly against this fold's own logs for a pipeline bug
-before trusting the number: training composition correctly excluded
-tier2_splicing, eval used the freshly-trained fold-specific checkpoint (not
-a stale one), and the scoring logic is simple and already unit-tested — no
-bug found. Full breakdown in `results/tables/phase6_leave_one_out_summary.md`.
-13 of 15 held-out splicing examples were misclassified "genuine," most with
-high confidence in that wrong verdict (0.95-0.99+ P(genuine)); only 2 of 15
-were correctly caught. This is not the same total collapse v24 showed (0/68,
-zero ever predicted "tampered") — 2 examples were caught, with strong
-confidence in the correct direction — but it's much closer to that failure
-mode than to Finding 1's 86.7%. **This materially changes what can honestly
-be claimed about v26's generalization**: Finding 1 above should be read as
-"class-balancing fixed the easy-shortcut problem within the training
-distribution," not "class-balancing fixed generalization to unseen attack
-types" — those are different claims, and the leave-one-out result is what
-actually tests the second one. Ruling out one candidate explanation: a
+[0.0%, 33.3%].** 13 of 15 held-out splicing examples were misclassified
+"genuine," most with high confidence in that wrong verdict (0.95-0.99+
+P(genuine)); only 2 of 15 were correctly caught. Not a total collapse — 2
+examples were caught with strong confidence in the correct direction.
+
+**Fold 2 (tier4_full_synthetic held out): 0.000 accuracy (0/15 correct),
+95% CI [0.0%, 0.0%] — a total collapse, the same single-class signature as
+v24's original failure.** 14 of 15 held-out examples predicted "genuine," 1
+unparseable, zero ever predicted "tampered."
+
+**Combined: 6.7% (2/30), 95% CI [0.0%, 16.7%].** Full breakdown in
+`results/tables/phase6_leave_one_out_summary.md`. Both folds checked
+directly against their own logs for a pipeline bug before trusting either
+number: training composition correctly excluded the held-out tier in both
+cases, eval used each fold's freshly-trained checkpoint (never a stale
+one), class-balancing applied correctly (751→1400 and 747→1400) — no bug
+found in either fold.
+
+**This materially changes what can honestly be claimed about v26's
+generalization**: Finding 1 above should be read as "class-balancing fixed
+the easy-shortcut problem within the training distribution," not
+"class-balancing fixed generalization to unseen attack types" — those are
+different claims, and leave-one-out is what actually tests the second one.
+
+**Why tier4 failed harder than tier2 — a real, structural reason.** Tiers
+1, 2, 3, and 5 all share the same underlying tampering concept: start from
+a real MIDV-2020 template and make a *local* change (a swapped digit, a
+spliced photo, a diffusion-inpainted patch, a recapture degradation) — the
+document's overall layout and security background stay genuine throughout.
+Tier 4 is categorically different: an entirely fabricated document with no
+real template underneath at all. Holding tier4 out means the remaining four
+tiers can only teach "spot a local anomaly on a real template" — never the
+concept tier4 actually needs ("the whole document can be fake"). That's a
+genuine data/concept-coverage gap, not a capacity or attention-coverage
+issue, and it explains tier2's partial success too: splicing is still "a
+local anomaly on a real template," closer to what tier1/3/5 already taught
+than tier4 is.
+
+Ruling out one candidate explanation for the perceptual side of this: a
 follow-up diagnostic (`kaggle_kernels/diagnostic_vision_modules/`) tested
-whether LoRA's `target_modules` reach the vision encoder at all (they might
-never have been taught to notice tampering-specific visual artifacts).
-Result: partially — Qwen2.5-VL's vision-block MLP layers share naming with
-the LLM decoder's projections, so those are adapted (96 real modules across
-32 vision blocks), but the vision tower's attention layers (`attn.qkv`,
+whether LoRA's `target_modules` reach the vision encoder at all. Result:
+partially — Qwen2.5-VL's vision-block MLP layers share naming with the LLM
+decoder's projections, so those are adapted (96 real modules across 32
+vision blocks), but the vision tower's attention layers (`attn.qkv`,
 `attn.proj`) are not. A narrower, more speculative gap than originally
-hypothesized, and untested whether closing it would help — not pursued
-further given the cost of a retrain against uncertain payoff, weighed
-against other queued work. Fold 2 (tier4_full_synthetic) is running to see
-whether this pattern holds for a different held-out tier before drawing a
-conclusion from more than one data point. Fixing Finding 2's retraining-loop
-fragility first would keep a future full 5-fold re-run from mixing that
-separate bug into the numbers, but wasn't a blocker for this scoped check
-since no adversarial-round retraining is involved here — each fold trains
-once, directly on the balanced data, same as v26 itself.
+hypothesized. Given fold 2's result, this lever looks more plausible for
+tier2-style localized-artifact generalization than for tier4-style
+wholesale-fabrication generalization, which reads as a concept-coverage gap
+no amount of attention capacity would close. A real retrain
+(`kaggle_kernels/phase6_leave_one_out_v27_vision_attn/`) is queued to test
+this against the tier2 fold specifically, with this tempered expectation
+stated up front rather than after the fact. Fixing Finding 2's
+retraining-loop fragility first would keep a future full 5-fold re-run from
+mixing that separate bug into the numbers, but wasn't a blocker for this
+scoped check since no adversarial-round retraining is involved here — each
+fold trains once, directly on the balanced data, same as v26 itself.
 
 ## Limitations
 
@@ -616,6 +641,15 @@ once, directly on the balanced data, same as v26 itself.
   real follow-up experiment, not a quick correction — documented here as a
   known limitation rather than fixed live.
 
+- **v26 fixes the easy-shortcut collapse within its training distribution
+  but does not clearly generalize to unseen attack types.** Real
+  leave-one-out results on 2 folds: 13.3% (tier2_splicing held out) and
+  0.000% (tier4_full_synthetic held out, a total single-class collapse) —
+  see Results above. The most-likely explanation is a genuine data/concept-
+  coverage gap (tier4 is a categorically different tampering concept the
+  other 4 tiers can't teach by analogy), not a bug — checked directly
+  against both folds' logs and found none. This is the project's most
+  important open limitation as of this writing.
 - **The adversarial-rounds retraining loop was fragile, even on a
   checkpoint that discriminates well.** v26's base checkpoint shows real,
   varied, mostly-correct predictions, but 3-epoch retrains on 4-20 mined
@@ -676,12 +710,24 @@ once, directly on the balanced data, same as v26 itself.
   Results above) is implemented but hasn't been run yet — needs a real
   re-run of rounds 1-2 against v26 to confirm predictions stay varied
   instead of flipping back to single-class.
-- **Full 5-fold leave-one-out re-run on v26.** A 2-fold scoped version
-  (tier2_splicing, tier4_full_synthetic) is in progress at time of writing
-  as a time-boxed check within a real compute budget; the remaining 3 folds
-  are the natural extension once time/compute allow, to confirm the
-  class-balance fix generalizes to unseen tiers and not just the fixed
-  30-example eval set.
+- **Close the real generalization gap the 2-fold leave-one-out re-run
+  found** (13.3% and 0.000% — see Results/Limitations above). The most
+  promising lever identified so far is training data that actually teaches
+  the concept a held-out tier needs (e.g. more diverse full-fabrication
+  examples so "wholesale fake document" isn't a concept only tier4 ever
+  demonstrates) rather than just more capacity. The vision-attention retrain
+  (below) is a cheaper thing to try first, with tempered expectations.
+- **Vision-attention LoRA retrain, tested against the tier2_splicing fold**
+  (`kaggle_kernels/phase6_leave_one_out_v27_vision_attn/`) — extends LoRA to
+  the vision encoder's attention layers (currently unadapted, per the
+  diagnostic above) to test whether closing that gap helps localized-
+  artifact generalization specifically. Expected to matter less for
+  tier4-style wholesale fabrication, which looks like a concept-coverage gap
+  instead.
+- **Full 5-fold leave-one-out re-run on v26.** The remaining 3 folds
+  (tier1_field_tamper, tier3_inpainting, tier5_recapture) would complete the
+  picture — the 2 folds run so far both show a real generalization gap, but
+  a full picture needs all 5.
 - **Resolve the v25 memory anomaly** — why LoRA rank r=16 OOM'd identically
   three times and then completed successfully with a real ~4GB margin on a
   fourth attempt, on the same base model/library versions/T4 tier.

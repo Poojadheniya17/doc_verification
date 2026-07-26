@@ -105,23 +105,28 @@ isolation at the full rate.
 A full 5-fold leave-one-out re-run on v26 would cost ~27-28 GPU-hours,
 close to the entire weekly Kaggle free-tier quota, so it wasn't attempted
 in full. A scoped 2-fold version (tier2_splicing and tier4_full_synthetic
-held out) is running instead, as a real, time-boxed check of whether the
-round-0 result above generalizes to an attack type the balanced checkpoint
-never trained on.
+held out) ran instead, as a real, time-boxed check of whether the round-0
+result above generalizes to an attack type the balanced checkpoint never
+trained on. Both folds are complete, and both real results are weak.
 
-**Fold 1 (tier2_splicing) result: 13.3% (2/15 correct)** — a real, weak
-result that does not confirm the round-0 finding generalizes. 13 of 15
-held-out splicing examples were misclassified "genuine," most confidently
-(0.95-0.99+ P(genuine)); only 2 of 15 were caught. Full breakdown and the
-follow-up vision-encoder diagnostic in
+**Fold 1 (tier2_splicing): 13.3% (2/15 correct), 95% CI [0.0%, 33.3%].** 13
+of 15 held-out splicing examples were misclassified "genuine," most
+confidently (0.95-0.99+ P(genuine)); only 2 of 15 were caught.
+
+**Fold 2 (tier4_full_synthetic): 0.000 (0/15 correct), 95% CI [0.0%, 0.0%]
+— a total collapse, the same single-class signature as v24's original
+failure.** 14 of 15 predicted "genuine," 1 unparseable, zero ever predicted
+"tampered."
+
+Full breakdown and the reason tier4 failed harder than tier2 (a real,
+structural data/concept-coverage gap, not a bug) in
 `results/tables/phase6_leave_one_out_summary.md`. Round 0's 86.7% answers
-"did class-balancing remove the easy majority-class shortcut" (yes); this
-fold answers "does that generalize to an attack type never seen during
-training" (not clearly, at least for this tier) — different questions, and
-conflating them would overstate what round 0 actually showed. Fold 2
-(tier4_full_synthetic) is running to check a second, more-different tier
-before drawing a conclusion from a single fold. Fixing the retraining-loop
-fragility above is still worth doing first for any *future* full 5-fold
-re-run, so that fragility doesn't get mixed into those numbers — it wasn't
-a blocker for this 2-fold check, since no adversarial-round retraining
-happens here, only a fresh full retrain per fold.
+"did class-balancing remove the easy majority-class shortcut" (yes); these
+folds answer "does that generalize to an attack type never seen during
+training" (no, not clearly, across 2 real data points) — different
+questions, and conflating them would overstate what round 0 actually
+showed. Fixing the retraining-loop fragility above is still worth doing
+first for any *future* full 5-fold re-run, so that fragility doesn't get
+mixed into those numbers — it wasn't a blocker for this 2-fold check, since
+no adversarial-round retraining happens here, only a fresh full retrain per
+fold.

@@ -89,57 +89,73 @@ instead: tier2_splicing (a localized-forgery case) and tier4_full_synthetic
 class-balanced set (`kaggle_kernels/phase6_leave_one_out_v26/`), not a
 shortcut.
 
-| Held-out tier | n | Accuracy | 95% CI | Predicted genuine | Predicted tampered |
-|---|---|---|---|---|---|
-| tier2_splicing | 15 | 0.133 | [0.000, 0.333] | 13/15 | 2/15 |
-| tier4_full_synthetic | pending | — | — | — | — |
+| Held-out tier | n | Accuracy | 95% CI | Predicted genuine | Predicted tampered | Unparseable |
+|---|---|---|---|---|---|---|
+| tier2_splicing | 15 | 0.133 | [0.000, 0.333] | 13/15 | 2/15 | 0 |
+| tier4_full_synthetic | 15 | 0.000 | [0.000, 0.000] | 14/15 | 0/15 | 1 |
+| **Combined** | 30 | 0.067 | [0.000, 0.167] | 27/30 | 2/30 | 1 |
 
-The CI is wide at n=15, as expected -- but even its upper bound (33.3%) is
-nowhere near round 0's 86.7%, so small-sample noise doesn't rescue the
-finding. Before trusting the number at all, three real places a pipeline bug
-could hide were checked directly against this fold's actual logs, not
-assumed: (1) training composition -- confirmed `training on
-['tier1_field_tamper', 'tier3_inpainting', 'tier4_full_synthetic',
-'tier5_recapture']`, tier2_splicing genuinely excluded; (2) checkpoint used
-for eval -- confirmed `adapter=/kaggle/working/checkpoints/
-loo_v26_holdout_tier2_splicing/final`, the freshly-trained fold-specific
-adapter, not a stale one; (3) scoring logic (`load_tier_examples()`,
-`score_prediction()`) -- simple, already unit-tested, re-read and correct.
-No pipeline bug found; this is a real result, not an artifact.
+Both real. Before trusting either number, the same three places a pipeline
+bug could hide were checked directly against each fold's own logs, not
+assumed: (1) training composition -- confirmed each fold's held-out tier
+was genuinely excluded (`training on [...]` printed the other 4 tiers only,
+in both cases); (2) checkpoint used for eval -- confirmed each fold loaded
+its own freshly-trained checkpoint (`loo_v26_holdout_tier2_splicing/final`
+and `loo_v26_holdout_tier4_full_synthetic/final` respectively), never a
+stale one; (3) scoring logic -- simple, already-unit-tested code, re-read
+and correct in both cases; class-balancing applied correctly in both
+(751→1400 and 747→1400). No pipeline bug found in either fold.
 
-**Fold 1 (tier2_splicing) result: 13.3% (2/15 correct).** This is a real,
-weak result, and it changes what can honestly be claimed about v26. Round 0
-of the adversarial-rounds check (`phase6_adversarial_rounds_summary.md`)
-showed v26 scoring 86.7% including tier2_splicing examples — but those were
-drawn from the same distribution the checkpoint trained on. This fold holds
-tier2_splicing out of training entirely, and the result is much closer to
-the v24/v25 single-class-collapse pattern than to 86.7%: 13 of 15 held-out
+**Fold 1 (tier2_splicing): 13.3% (2/15 correct).** 13 of 15 held-out
 splicing examples were misclassified "genuine," most with high confidence
 in that wrong verdict (0.95-0.99+ P(genuine)). Only 2 of 15 were correctly
 caught, both with strong confidence in the correct direction — not a total
-collapse (v24 was 0/68 with zero ever predicted "tampered"), but a real,
-significant generalization gap, not a solved problem.
+collapse, but a real, significant generalization gap.
+
+**Fold 2 (tier4_full_synthetic): 0.000 (0/15 correct) — a total collapse,
+the same single-class signature as v24's original failure.** 14 of 15
+held-out examples predicted "genuine," 1 unparseable, zero ever predicted
+"tampered."
+
+**Why tier4 failed harder than tier2 — a real, structural reason, not just
+"generalization is hard."** Tiers 1, 2, 3, and 5 all share the same
+underlying tampering concept: start from a real MIDV-2020 template and
+make a *local* change (a swapped digit, a spliced photo region, a
+diffusion-inpainted patch, a recapture degradation) — the document's
+overall layout and security background stay genuine in every case. Tier 4
+is categorically different: an entirely fabricated document generated from
+scratch, with no real template underneath at all. When tier4 is held out,
+the remaining four tiers can only teach "spot a local anomaly on a real
+template" — they never demonstrate the concept the model actually needs
+for tier4 ("the whole document can be fake, not just a piece of it").
+That's a genuine data/concept-coverage gap, not a capacity or
+attention-coverage issue. It also explains tier2's partial success: photo
+splicing is still "a local anomaly on a real template," closer in kind to
+what tier1/3/5 already taught than tier4 is.
 
 Follow-up diagnostic (`kaggle_kernels/diagnostic_vision_modules/`): tested
 whether LoRA's `target_modules` ever reach the vision encoder at all (a
-plausible cause — the frozen vision tower would never have been taught to
-notice tampering-specific visual artifacts). Result: partially yes.
-Qwen2.5-VL's vision-block MLP layers (`gate_proj`/`up_proj`/`down_proj`)
-happen to share naming with the LLM decoder's projections, so 96 real
-vision-side modules across all 32 vision blocks do get LoRA-adapted. What's
-NOT covered: the vision tower's attention modules (`attn.qkv`, `attn.proj`
-— different names from the LLM side's `q/k/v/o_proj`). A narrower,
-more speculative gap than the clean "vision encoder is completely frozen"
-hypothesis this diagnostic was built to test — refuted, not confirmed.
-Whether extending `target_modules` to the vision attention layers would
-help is untested; a real retrain would be needed to find out, and hasn't
-been attempted given the cost/uncertain-payoff tradeoff against other
-queued work.
+plausible cause for the perceptual side of this — the frozen vision tower
+would never have been taught to notice tampering-specific visual
+artifacts). Result: partially yes. Qwen2.5-VL's vision-block MLP layers
+(`gate_proj`/`up_proj`/`down_proj`) happen to share naming with the LLM
+decoder's projections, so 96 real vision-side modules across all 32 vision
+blocks do get LoRA-adapted. What's NOT covered: the vision tower's
+attention modules (`attn.qkv`, `attn.proj` — different names from the LLM
+side's `q/k/v/o_proj`). A narrower, more speculative gap than the clean
+"vision encoder is completely frozen" hypothesis this diagnostic was built
+to test — refuted, not confirmed. Given fold 2's result, this lever (if it
+helps at all) is more plausible for tier2-style localized-artifact
+generalization than for tier4-style wholesale-fabrication generalization,
+which looks like a concept-coverage gap no amount of attention capacity
+would close. A real retrain (`kaggle_kernels/phase6_leave_one_out_v27_vision_attn/`)
+is queued to test this against the tier2 fold specifically, with tempered
+expectations stated up front rather than after the fact.
 
-**Reading fold 1 honestly**: the class-balancing fix (v26) solves the
-easy-shortcut problem within its training distribution, but generalizing to
-a genuinely unseen visual tampering technique (a splice blend seam, never
-shown during this fold's training) is a separate, harder problem that
-balancing the data didn't automatically solve. Fold 2 (tier4_full_synthetic)
-is running to see whether this holds for a different, more-different held-
-out tier too, before drawing a final conclusion from 2 data points.
+**Reading both folds honestly**: the class-balancing fix (v26) solves the
+easy-shortcut problem within its training distribution (86.7% on the
+same-distribution eval set), but generalizing to a genuinely unseen
+tampering technique is a separate, harder problem that balancing the data
+did not solve — confirmed now with 2 real data points, not 1, one partial
+failure and one total collapse. This is the project's most important open
+finding as of this writing.

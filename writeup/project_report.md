@@ -543,18 +543,40 @@ useful. Neither should be read as evidence against the other.
 A full 5-fold leave-one-out re-run on v26 would cost ~27-28 GPU-hours —
 close to the entire weekly Kaggle free-tier quota and longer than a single
 session reliably runs, so it wasn't attempted in full. A scoped 2-fold
-version is in progress instead (tier2_splicing and tier4_full_synthetic
-held out, chosen as a localized-forgery case and the most-different
+version is running instead (tier2_splicing and tier4_full_synthetic held
+out, chosen as a localized-forgery case and the most-different
 generalization case respectively), each fold a real full retrain on the
 balanced set — not a shortcut, just a smaller slice of the same experiment.
-As of this writing, fold 1 (tier2_splicing held out) is still training on
-Kaggle; neither fold's result is in yet, so Finding 1 above should be read
-as promising-but-unconfirmed until real leave-one-out numbers land here.
-Fixing Finding 2's retraining-loop fragility first would keep a
-future full re-run from mixing that separate bug into these numbers, but
-wasn't a blocker for this scoped check since no adversarial-round retraining
-is involved here — each fold trains once, directly on the balanced data,
-same as v26 itself.
+
+**Fold 1 (tier2_splicing held out): 13.3% accuracy (2/15 correct) — a real,
+weak result.** Full breakdown in `results/tables/phase6_leave_one_out_summary.md`.
+13 of 15 held-out splicing examples were misclassified "genuine," most with
+high confidence in that wrong verdict (0.95-0.99+ P(genuine)); only 2 of 15
+were correctly caught. This is not the same total collapse v24 showed (0/68,
+zero ever predicted "tampered") — 2 examples were caught, with strong
+confidence in the correct direction — but it's much closer to that failure
+mode than to Finding 1's 86.7%. **This materially changes what can honestly
+be claimed about v26's generalization**: Finding 1 above should be read as
+"class-balancing fixed the easy-shortcut problem within the training
+distribution," not "class-balancing fixed generalization to unseen attack
+types" — those are different claims, and the leave-one-out result is what
+actually tests the second one. Ruling out one candidate explanation: a
+follow-up diagnostic (`kaggle_kernels/diagnostic_vision_modules/`) tested
+whether LoRA's `target_modules` reach the vision encoder at all (they might
+never have been taught to notice tampering-specific visual artifacts).
+Result: partially — Qwen2.5-VL's vision-block MLP layers share naming with
+the LLM decoder's projections, so those are adapted (96 real modules across
+32 vision blocks), but the vision tower's attention layers (`attn.qkv`,
+`attn.proj`) are not. A narrower, more speculative gap than originally
+hypothesized, and untested whether closing it would help — not pursued
+further given the cost of a retrain against uncertain payoff, weighed
+against other queued work. Fold 2 (tier4_full_synthetic) is running to see
+whether this pattern holds for a different held-out tier before drawing a
+conclusion from more than one data point. Fixing Finding 2's retraining-loop
+fragility first would keep a future full 5-fold re-run from mixing that
+separate bug into the numbers, but wasn't a blocker for this scoped check
+since no adversarial-round retraining is involved here — each fold trains
+once, directly on the balanced data, same as v26 itself.
 
 ## Limitations
 

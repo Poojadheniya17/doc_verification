@@ -79,3 +79,54 @@ model doesn't just generalize poorly, it doesn't appear to have learned
 image-content-based discrimination at all, converging to the majority-class
 shortcut every time. That's the project's central finding at this point in
 the training story, not something to soften into "needs more tuning."
+
+## v26 (class-balanced) re-validation — 2 scoped folds
+
+A full 5-fold re-run on v26 would cost ~27-28 GPU-hours, close to the
+entire weekly Kaggle free-tier quota, so a scoped 2-fold version is running
+instead: tier2_splicing (a localized-forgery case) and tier4_full_synthetic
+(the most-different generalization case), each a real full retrain on the
+class-balanced set (`kaggle_kernels/phase6_leave_one_out_v26/`), not a
+shortcut.
+
+| Held-out tier | n | Accuracy | Predicted genuine | Predicted tampered |
+|---|---|---|---|---|
+| tier2_splicing | 15 | 0.133 | 13/15 | 2/15 |
+| tier4_full_synthetic | pending | — | — | — |
+
+**Fold 1 (tier2_splicing) result: 13.3% (2/15 correct).** This is a real,
+weak result, and it changes what can honestly be claimed about v26. Round 0
+of the adversarial-rounds check (`phase6_adversarial_rounds_summary.md`)
+showed v26 scoring 86.7% including tier2_splicing examples — but those were
+drawn from the same distribution the checkpoint trained on. This fold holds
+tier2_splicing out of training entirely, and the result is much closer to
+the v24/v25 single-class-collapse pattern than to 86.7%: 13 of 15 held-out
+splicing examples were misclassified "genuine," most with high confidence
+in that wrong verdict (0.95-0.99+ P(genuine)). Only 2 of 15 were correctly
+caught, both with strong confidence in the correct direction — not a total
+collapse (v24 was 0/68 with zero ever predicted "tampered"), but a real,
+significant generalization gap, not a solved problem.
+
+Follow-up diagnostic (`kaggle_kernels/diagnostic_vision_modules/`): tested
+whether LoRA's `target_modules` ever reach the vision encoder at all (a
+plausible cause — the frozen vision tower would never have been taught to
+notice tampering-specific visual artifacts). Result: partially yes.
+Qwen2.5-VL's vision-block MLP layers (`gate_proj`/`up_proj`/`down_proj`)
+happen to share naming with the LLM decoder's projections, so 96 real
+vision-side modules across all 32 vision blocks do get LoRA-adapted. What's
+NOT covered: the vision tower's attention modules (`attn.qkv`, `attn.proj`
+— different names from the LLM side's `q/k/v/o_proj`). A narrower,
+more speculative gap than the clean "vision encoder is completely frozen"
+hypothesis this diagnostic was built to test — refuted, not confirmed.
+Whether extending `target_modules` to the vision attention layers would
+help is untested; a real retrain would be needed to find out, and hasn't
+been attempted given the cost/uncertain-payoff tradeoff against other
+queued work.
+
+**Reading fold 1 honestly**: the class-balancing fix (v26) solves the
+easy-shortcut problem within its training distribution, but generalizing to
+a genuinely unseen visual tampering technique (a splice blend seam, never
+shown during this fold's training) is a separate, harder problem that
+balancing the data didn't automatically solve. Fold 2 (tier4_full_synthetic)
+is running to see whether this holds for a different, more-different held-
+out tier too, before drawing a final conclusion from 2 data points.

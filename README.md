@@ -214,14 +214,19 @@ analysis.
   real 1:1 ratio and retrained across all 5 tiers. Evaluated cold, it gets
   86.7% on a 30-example set and — more importantly — the predictions are
   actually varied: it catches every tampered example and only misfires on
-  genuine documents (calling them tampered, never the reverse). This is
-  promising, not conclusive — that 30-example set is drawn from the same
-  distribution as training, not the leave-one-attack-tier-out test that v24
-  actually failed. A scoped 2-fold leave-one-out re-validation is running
-  now to check whether the fix holds up against an unseen attack type; see
+  genuine documents (calling them tampered, never the reverse). That result
+  is promising but doesn't hold up the same way under the real
+  leave-one-attack-tier-out test: a scoped 2-fold re-validation's first fold
+  (tier2_splicing held out) scored only 13.3% (2/15), 13 of 15 held-out
+  examples confidently misclassified "genuine." Class-balancing fixed the
+  easy-shortcut problem within the training distribution, but generalizing
+  to a genuinely unseen tampering technique is a separate, harder problem
+  that isn't solved yet — see
   [writeup/project_report.md](writeup/project_report.md#fixing-the-actual-imbalance-v26)
-  for status. The adversarial-rounds retraining loop itself turned out to
-  be fragile even starting from this checkpoint (a handful of mined
-  examples is enough to collapse it back to single-class), which is a
-  separate, real finding — full writeup in
+  and [results/tables/phase6_leave_one_out_summary.md](results/tables/phase6_leave_one_out_summary.md)
+  for the full breakdown; fold 2 (tier4_full_synthetic) is running to check
+  whether this holds for a different held-out tier. The adversarial-rounds
+  retraining loop itself turned out to be fragile even starting from this
+  checkpoint (a handful of mined examples is enough to collapse it back to
+  single-class), which is a separate, real finding — full writeup in
   [results/tables/phase6_adversarial_rounds_summary.md](results/tables/phase6_adversarial_rounds_summary.md).

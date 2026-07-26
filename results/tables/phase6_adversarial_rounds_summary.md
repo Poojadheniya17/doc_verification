@@ -107,9 +107,21 @@ close to the entire weekly Kaggle free-tier quota, so it wasn't attempted
 in full. A scoped 2-fold version (tier2_splicing and tier4_full_synthetic
 held out) is running instead, as a real, time-boxed check of whether the
 round-0 result above generalizes to an attack type the balanced checkpoint
-never trained on. See `writeup/project_report.md` for status and results
-once both folds complete. Fixing the retraining-loop fragility above is
-still worth doing first for any *future* full 5-fold re-run, so that
-fragility doesn't get mixed into those numbers — it isn't a blocker for
-this 2-fold check, since no adversarial-round retraining happens here, only
-a fresh full retrain per fold.
+never trained on.
+
+**Fold 1 (tier2_splicing) result: 13.3% (2/15 correct)** — a real, weak
+result that does not confirm the round-0 finding generalizes. 13 of 15
+held-out splicing examples were misclassified "genuine," most confidently
+(0.95-0.99+ P(genuine)); only 2 of 15 were caught. Full breakdown and the
+follow-up vision-encoder diagnostic in
+`results/tables/phase6_leave_one_out_summary.md`. Round 0's 86.7% answers
+"did class-balancing remove the easy majority-class shortcut" (yes); this
+fold answers "does that generalize to an attack type never seen during
+training" (not clearly, at least for this tier) — different questions, and
+conflating them would overstate what round 0 actually showed. Fold 2
+(tier4_full_synthetic) is running to check a second, more-different tier
+before drawing a conclusion from a single fold. Fixing the retraining-loop
+fragility above is still worth doing first for any *future* full 5-fold
+re-run, so that fragility doesn't get mixed into those numbers — it wasn't
+a blocker for this 2-fold check, since no adversarial-round retraining
+happens here, only a fresh full retrain per fold.

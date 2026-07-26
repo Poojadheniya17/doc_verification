@@ -231,7 +231,8 @@ def build_conversation(image_path: str, target: dict) -> list[dict]:
     ]
 
 
-def load_model_for_training(model_config: dict, resume_from_adapter: str | None = None):
+def load_model_for_training(model_config: dict, resume_from_adapter: str | None = None,
+                             include_vision_attention: bool = False):
     """Loads Qwen2.5-VL in 4-bit (QLoRA) and wraps it with a LoRA adapter per
     model_config.yaml. Not exercised locally — see module docstring.
 
@@ -241,6 +242,20 @@ def load_model_for_training(model_config: dict, resume_from_adapter: str | None 
     for adversarial_rounds.py's targeted retraining, which builds on the
     previous round's model rather than starting over from the base model each
     time.
+
+    include_vision_attention: default False, zero effect on any existing
+    caller. model_config.yaml's lora.target_modules (q/k/v/o_proj,
+    gate/up/down_proj) are LLM-decoder projection names; a real diagnostic
+    (kaggle_kernels/diagnostic_vision_modules/) found the vision encoder's
+    MLP layers happen to share those names (so they ARE already LoRA-adapted)
+    but its attention layers (attn.qkv, attn.proj -- different names) are
+    not. When True, walks the loaded base model's real named_modules() and
+    extends target_modules with the exact full dotted paths of every vision
+    block's attn.qkv/attn.proj (never a short/ambiguous name like bare
+    "proj", which would also match patch_embed.proj -- a Conv layer, not a
+    Linear one, and not something to accidentally wrap in LoRA). A real,
+    speculative experiment (results/tables/phase6_leave_one_out_summary.md's
+    v26 re-validation section), not a proven fix.
     """
     import torch
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -306,9 +321,27 @@ def load_model_for_training(model_config: dict, resume_from_adapter: str | None 
         logger.info(f"Resumed LoRA adapter weights from {resume_from_adapter}")
     else:
         lora_cfg = model_config["lora"]
+        target_modules = list(lora_cfg["target_modules"])
+        if include_vision_attention:
+            import re
+
+            vision_attn_pattern = re.compile(r"visual\.blocks\.\d+\.attn\.(qkv|proj)$")
+            vision_attn_modules = [name for name, _ in model.named_modules() if vision_attn_pattern.search(name)]
+            if not vision_attn_modules:
+                raise RuntimeError(
+                    "include_vision_attention=True but no modules matched "
+                    f"{vision_attn_pattern.pattern!r} -- the real module names this was built "
+                    "against (kaggle_kernels/diagnostic_vision_modules/) may not match this "
+                    "model/transformers version anymore. Not silently training with the wrong "
+                    "target_modules."
+                )
+            logger.info(f"include_vision_attention: extending target_modules with "
+                        f"{len(vision_attn_modules)} real vision-attention modules "
+                        f"(e.g. {vision_attn_modules[0]})")
+            target_modules = target_modules + vision_attn_modules
         peft_config = LoraConfig(
             r=lora_cfg["r"], lora_alpha=lora_cfg["alpha"], lora_dropout=lora_cfg["dropout"],
-            target_modules=lora_cfg["target_modules"], bias=lora_cfg["bias"], task_type=lora_cfg["task_type"],
+            target_modules=target_modules, bias=lora_cfg["bias"], task_type=lora_cfg["task_type"],
         )
         model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
@@ -345,7 +378,7 @@ def _default_tier_manifest_paths(paths: dict, tier_names: list[str]) -> dict[str
 def train(model_config_path: str, training_config_path: str, environment: str | None = None,
           tier_names: list[str] | None = None, train_examples: list[dict] | None = None,
           checkpoint_subdir: str = "sft", resume_from_adapter: str | None = None,
-          learning_rate: float | None = None) -> str | None:
+          learning_rate: float | None = None, include_vision_attention: bool = False) -> str | None:
     """tier_names: which forgery tiers to include when building the training set
     (defaults to Phase 4's exact tier1+tier2 composition). Ignored if
     train_examples is given directly.
@@ -370,6 +403,9 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
     of mined failures at the same LR used for a full ~1400-example run was
     enough to overwrite most of what the full run taught the model. Defaults
     to the config value, so every other caller is unaffected.
+
+    include_vision_attention: see load_model_for_training(). Default False,
+    zero effect on any existing caller.
     """
     model_config = load_yaml(model_config_path)
     training_config = load_yaml(training_config_path)
@@ -398,7 +434,8 @@ def train(model_config_path: str, training_config_path: str, environment: str | 
 
     from transformers import Trainer, TrainingArguments
 
-    model, processor = load_model_for_training(model_config, resume_from_adapter=resume_from_adapter)
+    model, processor = load_model_for_training(model_config, resume_from_adapter=resume_from_adapter,
+                                                include_vision_attention=include_vision_attention)
     sft_cfg = training_config["sft"]
 
     class SFTDataset:

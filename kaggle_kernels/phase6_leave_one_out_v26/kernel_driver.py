@@ -30,7 +30,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # Change this one value before each push -- one real per-fold run per kernel
 # version. Valid values: tier1_field_tamper, tier2_splicing, tier3_inpainting,
 # tier4_full_synthetic, tier5_recapture.
-HELD_OUT_TIER = "tier2_splicing"
+HELD_OUT_TIER = "tier4_full_synthetic"
 
 subprocess.run(
     [sys.executable, "-m", "pip", "install", "-q",

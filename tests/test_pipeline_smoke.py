@@ -35,9 +35,15 @@ from src.decision.risk_tiering import route
 from src.eval.finetuned_eval import generation_confidence_to_p_genuine
 from src.eval.adversarial_rounds import build_accuracy_curve, build_eval_set, mine_failures
 from src.eval.adversarial_rounds import run as run_adversarial_rounds
+from src.eval.calibration import (
+    apply_platt_scaling,
+    confidence_in_prediction,
+    expected_calibration_error,
+    fit_platt_scaling,
+)
 from src.eval.clean_eval import _extract_json, build_eval_sample
 from src.eval.finetuned_eval import score_prediction
-from src.eval.leave_one_out_eval import aggregate_fold_results, build_folds, load_tier_examples
+from src.eval.leave_one_out_eval import aggregate_fold_results, build_folds, load_tier_examples, split_few_shot_manifest
 from src.eval.leave_one_out_eval import run as run_leave_one_out
 from src.eval.metrics import bootstrap_ci, field_exact_match, field_similarity
 from src.eval.quantization_bench import cost_per_million_verifications
@@ -762,6 +768,47 @@ def test_aggregate_fold_results_reports_per_tier_and_overall():
     assert results["per_tier"]["tier1"]["mean"] > results["per_tier"]["tier2"]["mean"]
 
 
+def _write_few_shot_source_manifest(tmp_path, n_success: int, n_fail: int = 0) -> Path:
+    entries = [{"success": True, "forged_image": f"ok_{i}.jpg"} for i in range(n_success)]
+    entries += [{"success": False, "forged_image": f"fail_{i}.jpg"} for i in range(n_fail)]
+    path = tmp_path / "tier_manifest.json"
+    path.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+    return path
+
+
+def test_split_few_shot_manifest_produces_disjoint_k_and_rest(tmp_path):
+    path = _write_few_shot_source_manifest(tmp_path, n_success=15)
+    few_shot, eval_manifest = split_few_shot_manifest(str(path), k=3, seed=42)
+
+    assert len(few_shot["entries"]) == 3
+    assert len(eval_manifest["entries"]) == 12
+    few_shot_paths = {e["forged_image"] for e in few_shot["entries"]}
+    eval_paths = {e["forged_image"] for e in eval_manifest["entries"]}
+    assert few_shot_paths.isdisjoint(eval_paths)
+    assert few_shot_paths | eval_paths == {f"ok_{i}.jpg" for i in range(15)}
+
+
+def test_split_few_shot_manifest_excludes_failed_entries(tmp_path):
+    path = _write_few_shot_source_manifest(tmp_path, n_success=5, n_fail=3)
+    few_shot, eval_manifest = split_few_shot_manifest(str(path), k=2, seed=1)
+    all_paths = {e["forged_image"] for e in few_shot["entries"] + eval_manifest["entries"]}
+    assert all(p.startswith("ok_") for p in all_paths)
+    assert len(all_paths) == 5
+
+
+def test_split_few_shot_manifest_is_deterministic_given_same_seed(tmp_path):
+    path = _write_few_shot_source_manifest(tmp_path, n_success=15)
+    few_shot_a, _ = split_few_shot_manifest(str(path), k=3, seed=42)
+    few_shot_b, _ = split_few_shot_manifest(str(path), k=3, seed=42)
+    assert few_shot_a == few_shot_b
+
+
+def test_split_few_shot_manifest_rejects_k_larger_than_available(tmp_path):
+    path = _write_few_shot_source_manifest(tmp_path, n_success=2)
+    with pytest.raises(ValueError):
+        split_few_shot_manifest(str(path), k=5, seed=42)
+
+
 def _write_leave_one_out_config(tmp_path) -> Path:
     config = {
         "leave_one_out": {
@@ -1106,3 +1153,82 @@ def test_save_and_load_index_roundtrip(tmp_path):
     assert loaded["model_name"] == "all-MiniLM-L6-v2"
     assert loaded["cases"] == index["cases"]
     assert np.allclose(loaded["embeddings"], index["embeddings"])
+
+
+# ---------------------------------------------------------------------------
+# calibration.py
+# ---------------------------------------------------------------------------
+
+def test_confidence_in_prediction_uses_p_genuine_directly_when_predicted_genuine():
+    assert confidence_in_prediction(0.9, "genuine") == 0.9
+
+
+def test_confidence_in_prediction_inverts_when_predicted_tampered():
+    # Predicted tampered with P(genuine)=0.1 -> real confidence IN that
+    # prediction is 0.9, not 0.1 -- the exact bug this function exists to avoid.
+    assert confidence_in_prediction(0.1, "tampered") == pytest.approx(0.9)
+
+
+def test_confidence_in_prediction_rejects_out_of_range():
+    with pytest.raises(ValueError):
+        confidence_in_prediction(1.5, "genuine")
+
+
+def test_ece_near_zero_for_perfectly_calibrated_predictions():
+    rng = random.Random(0)
+    confidences, corrects = [], []
+    # At each confidence level p, make correctness true with probability p —
+    # by construction, avg_confidence ~= avg_accuracy per bin -> low ECE.
+    for p in [0.55, 0.65, 0.75, 0.85, 0.95]:
+        for _ in range(200):
+            confidences.append(p)
+            corrects.append(rng.random() < p)
+    result = expected_calibration_error(confidences, corrects, n_bins=10)
+    assert result["n"] == 1000
+    assert result["ece"] < 0.03
+
+
+def test_ece_high_for_deliberately_overconfident_predictions():
+    # Always 0.95 confident, but only right 60% of the time -- real,
+    # deliberate overconfidence, the exact failure mode this module exists
+    # to catch (see module docstring: confidence is an admitted, unvalidated
+    # simplification).
+    rng = random.Random(1)
+    confidences = [0.95] * 500
+    corrects = [rng.random() < 0.6 for _ in range(500)]
+    result = expected_calibration_error(confidences, corrects, n_bins=10)
+    assert result["ece"] > 0.25  # ~0.95 - 0.60 = 0.35 expected
+
+
+def test_ece_mismatched_lengths_raises():
+    with pytest.raises(ValueError):
+        expected_calibration_error([0.9, 0.8], [True])
+
+
+def test_ece_empty_input_returns_nan_not_crash():
+    result = expected_calibration_error([], [])
+    assert result["n"] == 0
+
+
+def test_platt_scaling_reduces_ece_on_overconfident_data():
+    # Same deliberate-overconfidence construction as the ECE test above,
+    # split into a fit set and a held-out eval set so this is a real
+    # generalization check, not fitting and scoring on the same examples.
+    rng = random.Random(2)
+    all_conf = [0.95] * 1000
+    all_correct = [rng.random() < 0.6 for _ in range(1000)]
+    fit_conf, fit_correct = all_conf[:700], all_correct[:700]
+    eval_conf, eval_correct = all_conf[700:], all_correct[700:]
+
+    before = expected_calibration_error(eval_conf, eval_correct, n_bins=10)["ece"]
+    params = fit_platt_scaling(fit_conf, fit_correct)
+    calibrated = apply_platt_scaling(eval_conf, params["a"], params["b"])
+    after = expected_calibration_error(calibrated, eval_correct, n_bins=10)["ece"]
+
+    assert after < before
+    assert after < 0.1  # calibrated confidence should land close to the real ~0.6 accuracy
+
+
+def test_platt_scaling_requires_both_classes():
+    with pytest.raises(ValueError):
+        fit_platt_scaling([0.9, 0.8, 0.95], [True, True, True])

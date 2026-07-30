@@ -23,6 +23,7 @@ any) from the config are missing rather than silently pretending they ran.
 """
 
 import json
+import random
 from pathlib import Path
 
 from src.eval.metrics import bootstrap_ci
@@ -30,6 +31,45 @@ from src.utils.config_utils import load_yaml
 from src.utils.logging_utils import get_logger
 
 logger = get_logger("leave_one_out_eval")
+
+
+def split_few_shot_manifest(manifest_path: str, k: int, seed: int = 42) -> tuple[dict, dict]:
+    """Splits one tier's manifest into a tiny (k-example) training slice and
+    an evaluation slice holding everything else -- the few-shot exposure
+    diagnostic complementary to the zero-shot leave-one-out experiment.
+
+    The question this answers: does the LOO gap (13.3% tier2, 0.000% tier4 —
+    see results/tables/phase6_leave_one_out_summary.md) shrink once the model
+    sees even a handful of the held-out tier's real examples during training?
+    If k=2-3 closes most of the gap, this is primarily a "the model never
+    saw this concept at all" data-quantity problem. If it doesn't move much,
+    that's evidence for something more structural -- which is exactly the
+    case regularity_disruption.py's tier-agnostic augmentation is designed to
+    address without needing real examples of every possible tampering
+    category. Seeded, deterministic sampling (not the first k in file order,
+    which could accidentally be a biased document-code sample.
+
+    Returns (few_shot_manifest, eval_manifest), each shaped identically to
+    the source manifest ({"num_attempted", "num_success", "entries"}) so
+    both can be written to disk and fed straight into build_sft_examples()'s
+    tier_manifest_paths (few_shot_manifest as the held-out tier's manifest —
+    now not fully absent, just k-shot) and load_tier_examples (eval_manifest,
+    for measuring accuracy on what's left).
+    """
+    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    entries = manifest["entries"]
+    successful = [e for e in entries if e.get("success")]
+    if k > len(successful):
+        raise ValueError(f"Requested k={k} few-shot examples but only {len(successful)} "
+                          f"successful entries exist in {manifest_path}")
+
+    few_shot_entries = random.Random(seed).sample(successful, k)
+    few_shot_paths = {e["forged_image"] for e in few_shot_entries}
+    eval_entries = [e for e in successful if e["forged_image"] not in few_shot_paths]
+
+    few_shot_manifest = {"num_attempted": k, "num_success": k, "entries": few_shot_entries}
+    eval_manifest = {"num_attempted": len(eval_entries), "num_success": len(eval_entries), "entries": eval_entries}
+    return few_shot_manifest, eval_manifest
 
 
 def load_tier_examples(manifest_path: str, tier_name: str) -> list[dict]:

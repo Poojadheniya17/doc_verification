@@ -69,8 +69,14 @@ def load_finetuned_model_at_precision(model_config: dict, adapter_path: str, pre
     device_map = {"": 0} if device == "cuda" else device
 
     if precision == "fp16":
+        # fp16 has near-complete CPU kernel coverage missing in PyTorch (it's
+        # tuned for GPU tensor cores) -- silently much slower or outright
+        # unsupported for some ops. fp32 is the CPU-safe choice; GPU callers
+        # (quantization_bench.py) are unaffected since this only applies when
+        # device != "cuda".
+        dtype = torch.float16 if device == "cuda" else torch.float32
         base_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_cfg["name"], torch_dtype=torch.float16, device_map=device_map,
+            model_cfg["name"], torch_dtype=dtype, device_map=device_map,
             trust_remote_code=model_cfg["trust_remote_code"],
         )
     elif precision == "int8":

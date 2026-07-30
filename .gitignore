@@ -72,4 +72,5 @@ wandb/
 Thumbs.db
 .vscode/settings.json
 writeup/interview_prep.md
+writeup/interview_prep.pdf
 kaggle_loo_output*/
